@@ -22,7 +22,7 @@ def get_ai_decision(prompt, decision_type):
         full_prompt = f"{HUMAN_PROMPT}Help me make a decision about: {prompt}\n\nUse the following framework:\n{framework}\n\nNow, provide your decision advice:{AI_PROMPT}"
         
         completion = anthropic.completions.create(
-            model="claude-3.5",
+            model="claude-3-5-sonnet-20240620",
             max_tokens_to_sample=500,
             prompt=full_prompt,
         )
