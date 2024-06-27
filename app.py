@@ -1,12 +1,16 @@
-import os
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
+from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 import anthropic
 from datetime import datetime
 import logging
 from logging.handlers import RotatingFileHandler
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'you-will-never-guess'
@@ -15,6 +19,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['ANTHROPIC_API_KEY'] = os.environ.get('ANTHROPIC_API_KEY')
 
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
@@ -51,68 +56,59 @@ class Decision(db.Model):
     response = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
+# Feedback model
+class Feedback(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    rating = db.Column(db.Integer, nullable=False)
+    comment = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
 # Decision Frameworks
 DECISION_FRAMEWORKS = {
     "personal": {
         "name": "Personal Decision Framework",
         "steps": [
-            "Identify the decision to be made",
-            "List your options",
-            "Weigh the potential outcomes of each option",
-            "Consider your personal values and goals",
-            "Make a choice based on the above factors"
-        ]
+            {"title": "Identify the decision", "description": "Clearly state the decision you need to make."},
+            {"title": "List options", "description": "Write down all possible options you can think of."},
+            {"title": "Weigh outcomes", "description": "Consider the potential outcomes of each option."},
+            {"title": "Align with values", "description": "Reflect on how each option aligns with your personal values and goals."},
+            {"title": "Make a choice", "description": "Based on the above factors, make your decision."}
+        ],
+        "explanation": "Use this framework for personal decisions that affect your life and well-being.",
+        "example": "Choosing a career path or deciding whether to move to a new city."
     },
     "business": {
         "name": "Business Decision Framework",
         "steps": [
-            "Define the problem or opportunity",
-            "Gather relevant information",
-            "Identify alternatives",
-            "Weigh evidence and analyze options",
-            "Choose among alternatives",
-            "Take action",
-            "Review decision and consequences"
-        ]
+            {"title": "Define the problem", "description": "Clearly state the business problem or opportunity."},
+            {"title": "Gather information", "description": "Collect relevant data and insights."},
+            {"title": "Identify alternatives", "description": "List possible solutions or courses of action."},
+            {"title": "Evaluate options", "description": "Assess the pros and cons of each alternative."},
+            {"title": "Choose the best option", "description": "Select the most promising solution."},
+            {"title": "Implement and monitor", "description": "Put the decision into action and track its effectiveness."}
+        ],
+        "explanation": "Use this framework for decisions that impact your business or organization.",
+        "example": "Deciding whether to launch a new product line or expand into a new market."
     },
     "ethical": {
         "name": "Ethical Decision Framework",
         "steps": [
-            "Identify the ethical issue",
-            "Gather relevant facts",
-            "Consider ethical principles (e.g., utilitarianism, deontology)",
-            "Consult relevant ethical guidelines or codes",
-            "Consider alternative actions",
-            "Make a decision and justify it"
-        ]
-    },
-    "swot": {
-        "name": "SWOT Analysis Framework",
-        "steps": [
-            "Identify Strengths",
-            "Identify Weaknesses",
-            "Identify Opportunities",
-            "Identify Threats",
-            "Analyze how to leverage strengths and opportunities",
-            "Plan how to address weaknesses and threats"
-        ]
-    },
-    "risk_assessment": {
-        "name": "Risk Assessment Framework",
-        "steps": [
-            "Identify potential risks",
-            "Assess likelihood of each risk",
-            "Evaluate potential impact of each risk",
-            "Prioritize risks based on likelihood and impact",
-            "Develop risk mitigation strategies",
-            "Create a risk management plan"
-        ]
+            {"title": "Identify the ethical issue", "description": "Clearly state the ethical dilemma or question."},
+            {"title": "Gather relevant facts", "description": "Collect all pertinent information about the situation."},
+            {"title": "Consider ethical principles", "description": "Evaluate the situation using ethical theories (e.g., utilitarianism, deontology)."},
+            {"title": "Consult guidelines", "description": "Review any relevant ethical codes or guidelines."},
+            {"title": "Consider alternatives", "description": "Brainstorm possible courses of action."},
+            {"title": "Make and justify decision", "description": "Choose the most ethical option and explain your reasoning."}
+        ],
+        "explanation": "Use this framework when facing moral dilemmas or ethical challenges.",
+        "example": "Deciding whether to report a colleague's misconduct or determining how to allocate limited resources fairly."
     }
 }
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id)) 
 
 def get_decision_framework(decision_type):
     return DECISION_FRAMEWORKS.get(decision_type, DECISION_FRAMEWORKS["personal"])
@@ -120,19 +116,19 @@ def get_decision_framework(decision_type):
 def get_ai_decision(prompt, decision_type):
     try:
         framework = get_decision_framework(decision_type)
-        framework_steps = "\n".join(f"{i+1}. {step}" for i, step in enumerate(framework['steps']))
+        suggestions = []
         
-        message = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
-            max_tokens=1000,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Help me make a decision about: {prompt}\n\nUse the following framework ({framework['name']}):\n{framework_steps}\n\nNow, provide your decision advice, following each step of the framework:"
-                }
-            ]
-        )
-        return message.content[0].text
+        for step in framework['steps']:
+            step_prompt = f"For the decision: '{prompt}', provide advice for the step: {step['title']}. {step['description']}"
+            
+            message = client.messages.create(
+                model="claude-3-5-sonnet-20240620",
+                max_tokens=300,
+                messages=[{"role": "user", "content": step_prompt}]
+            )
+            suggestions.append({"step": step['title'], "advice": message.content[0].text})
+        
+        return suggestions
     except Exception as e:
         app.logger.error(f"Error in get_ai_decision: {str(e)}", exc_info=True)
         return f"Sorry, I couldn't make a decision at this time. Error: {str(e)}"
@@ -158,7 +154,7 @@ def index():
 
 @app.route('/frameworks', methods=['GET'])
 def get_frameworks():
-    return jsonify({key: value['name'] for key, value in DECISION_FRAMEWORKS.items()})
+    return jsonify(DECISION_FRAMEWORKS)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -235,6 +231,48 @@ def get_decisions():
 @app.route('/check_login')
 def check_login():
     return jsonify({'logged_in': current_user.is_authenticated})
+
+@app.route('/compare_decisions', methods=['POST'])
+@login_required
+def compare_decisions():
+    data = request.json
+    decision_ids = data.get('decision_ids', [])
+    decisions = Decision.query.filter(Decision.id.in_(decision_ids), Decision.user_id == current_user.id).all()
+    
+    comparison = client.messages.create(
+        model="claude-3-5-sonnet-20240620",
+        max_tokens=1000,
+        messages=[{
+            "role": "user", 
+            "content": f"Compare the following decisions:\n\n" + "\n\n".join([f"Decision {i+1}:\nQuestion: {d.question}\nFramework: {d.framework}\nResponse: {d.response}" for i, d in enumerate(decisions)])
+        }]
+    )
+    
+    return jsonify({'comparison': comparison.content[0].text})
+
+@app.route('/submit_feedback', methods=['POST'])
+@login_required
+def submit_feedback():
+    data = request.json
+    new_feedback = Feedback(
+        user_id=current_user.id,
+        rating=data['rating'],
+        comment=data.get('comment', '')
+    )
+    db.session.add(new_feedback)
+    db.session.commit()
+    return jsonify({'message': 'Feedback submitted successfully'}), 200
+
+@app.route('/get_feedback', methods=['GET'])
+@login_required
+def get_feedback():
+    feedback = Feedback.query.filter_by(user_id=current_user.id).order_by(Feedback.created_at.desc()).all()
+    return jsonify([{
+        'id': f.id,
+        'rating': f.rating,
+        'comment': f.comment,
+        'created_at': f.created_at.isoformat()
+    } for f in feedback])
 
 @app.errorhandler(Exception)
 def handle_exception(e):

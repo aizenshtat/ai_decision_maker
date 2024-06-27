@@ -16,13 +16,25 @@
         </div>
         <div v-else>
             <form @submit.prevent="getDecision">
-                <label for="user-input">What decision do you need help with?</label>
-                <textarea id="user-input" v-model="userInput" required></textarea>
+                <label for="decision-question">What decision do you need help with?</label>
+                <textarea id="decision-question" v-model="decisionQuestion" required></textarea>
                 
                 <label for="decision-type">Type of Decision:</label>
-                <select id="decision-type" v-model="decisionType">
-                    <option v-for="(name, key) in frameworks" :value="key">${name}</option>
+                <select id="decision-type" v-model="decisionType" @change="updateFrameworkInfo">
+                    <option v-for="(framework, key) in frameworks" :value="key">${framework.name}</option>
                 </select>
+                
+                <div v-if="selectedFramework">
+                    <h3>About this framework:</h3>
+                    <p><strong>When to use:</strong> ${selectedFramework.explanation}</p>
+                    <p><strong>Example:</strong> ${selectedFramework.example}</p>
+                </div>
+                
+                <div v-for="(step, index) in frameworkSteps" :key="index">
+                    <h3>${step.title}</h3>
+                    <p>${step.description}</p>
+                    <textarea v-model="userInputs[index]" :placeholder="'Your thoughts for ' + step.title"></textarea>
+                </div>
                 
                 <button type="submit" :disabled="loading">
                     ${loading ? 'Thinking...' : 'Get AI Suggestion'}
@@ -34,11 +46,34 @@
             </div>
             
             <div v-if="aiResponse" id="ai-response">
-                <h2>AI Suggestion:</h2>
-                <div v-html="formattedResponse"></div>
+                <h2>AI Suggestions:</h2>
+                <div v-for="(suggestion, index) in aiResponse" :key="index">
+                    <h3>${suggestion.step}</h3>
+                    <p>${suggestion.advice}</p>
+                </div>
                 <button @click="saveDecision" :disabled="decisionSaved">
                     ${decisionSaved ? 'Decision Saved' : 'Save Decision'}
                 </button>
+                
+                <div class="feedback-form">
+                    <h3>Was this helpful?</h3>
+                    <div class="rating">
+                        <span v-for="i in 5" :key="i" @click="setRating(i)" :class="{ 'selected': rating >= i }">☆</span>
+                    </div>
+                    <textarea v-model="feedbackComment" placeholder="Additional comments (optional)"></textarea>
+                    <button @click="submitFeedback" :disabled="!rating">Submit Feedback</button>
+                </div>
+            </div>
+
+            <div v-if="userFeedback.length > 0" class="user-feedback">
+                <h2>Your Feedback</h2>
+                <ul>
+                    <li v-for="feedback in userFeedback" :key="feedback.id">
+                        <p>Rating: ${feedback.rating}/5</p>
+                        <p v-if="feedback.comment">Comment: ${feedback.comment}</p>
+                        <p>Submitted: ${new Date(feedback.created_at).toLocaleString()}</p>
+                    </li>
+                </ul>
             </div>
 
             <div v-if="savedDecisions.length > 0" class="saved-decisions">
@@ -52,6 +87,18 @@
                     </li>
                 </ul>
             </div>
+
+            <div v-if="savedDecisions.length > 1" class="decision-comparison">
+                <h2>Compare Decisions</h2>
+                <select v-model="selectedDecisions" multiple>
+                    <option v-for="decision in savedDecisions" :value="decision.id">${decision.question}</option>
+                </select>
+                <button @click="compareDecisions" :disabled="selectedDecisions.length < 2">Compare Selected Decisions</button>
+                <div v-if="comparisonResult">
+                    <h3>Comparison Result:</h3>
+                    <p>${comparisonResult}</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -60,29 +107,38 @@
             el: '#app',
             delimiters: ['${', '}'],
             data: {
-                userInput: '',
-                decisionType: 'personal',
-                aiResponse: '',
-                loading: false,
-                frameworks: {},
                 isLoggedIn: false,
+                decisionQuestion: '',
+                decisionType: 'personal',
+                frameworks: {},
+                selectedFramework: null,
+                frameworkSteps: [],
+                userInputs: [],
+                aiResponse: null,
+                loading: false,
+                error: '',
                 decisionSaved: false,
                 savedDecisions: [],
-                error: ''
-            },
-            computed: {
-                formattedResponse() {
-                    return this.aiResponse.replace(/\n/g, '<br>');
-                }
+                rating: 0,
+                feedbackComment: '',
+                selectedDecisions: [],
+                comparisonResult: null,
+                userFeedback: []
             },
             methods: {
+                updateFrameworkInfo() {
+                    this.selectedFramework = this.frameworks[this.decisionType];
+                    this.frameworkSteps = this.selectedFramework.steps;
+                    this.userInputs = new Array(this.frameworkSteps.length).fill('');
+                },
                 getDecision() {
                     this.loading = true;
                     this.decisionSaved = false;
                     this.error = '';
                     axios.post('/', {
-                        user_input: this.userInput,
-                        decision_type: this.decisionType
+                        user_input: this.decisionQuestion,
+                        decision_type: this.decisionType,
+                        step_inputs: this.userInputs
                     }, {
                         headers: {
                             'Content-Type': 'application/json'
@@ -100,9 +156,9 @@
                 },
                 saveDecision() {
                     axios.post('/save_decision', {
-                        question: this.userInput,
+                        question: this.decisionQuestion,
                         framework: this.decisionType,
-                        response: this.aiResponse
+                        response: JSON.stringify(this.aiResponse)
                     }, {
                         headers: {
                             'Content-Type': 'application/json'
@@ -130,6 +186,49 @@
                 showDecisionDetails(decision) {
                     alert(`Question: ${decision.question}\n\nResponse: ${decision.response}`);
                 },
+                setRating(value) {
+                    this.rating = value;
+                },
+                submitFeedback() {
+                    if (!this.rating) return;
+                    axios.post('/submit_feedback', {
+                        rating: this.rating,
+                        comment: this.feedbackComment
+                    })
+                    .then(() => {
+                        alert('Thank you for your feedback!');
+                        this.rating = 0;
+                        this.feedbackComment = '';
+                        this.fetchFeedback(); 
+                    })
+                    .catch(error => {
+                        console.error('Error submitting feedback:', error);
+                        this.error = 'Error submitting feedback. Please try again.';
+                    });
+                },
+                fetchFeedback() {
+                    axios.get('/get_feedback')
+                        .then(response => {
+                            this.userFeedback = response.data;
+                        })
+                        .catch(error => {
+                            console.error('Error fetching feedback:', error);
+                            this.error = 'Error fetching feedback. Please try again.';
+                        });
+                },
+                compareDecisions() {
+                    if (this.selectedDecisions.length < 2) return;
+                    axios.post('/compare_decisions', {
+                        decision_ids: this.selectedDecisions
+                    })
+                    .then(response => {
+                        this.comparisonResult = response.data.comparison;
+                    })
+                    .catch(error => {
+                        console.error('Error comparing decisions:', error);
+                        this.error = 'Error comparing decisions. Please try again.';
+                    });
+                },
                 checkLoginStatus() {
                     axios.get('/check_login')
                     .then(response => {
@@ -148,12 +247,14 @@
                 axios.get('/frameworks')
                     .then(response => {
                         this.frameworks = response.data;
+                        this.updateFrameworkInfo();
                     })
                     .catch(error => {
                         console.error('Error fetching frameworks:', error);
                         this.error = 'Error fetching decision frameworks. Please try refreshing the page.';
                     });
                 this.checkLoginStatus();
+                this.fetchFeedback();
             }
         });
     </script>

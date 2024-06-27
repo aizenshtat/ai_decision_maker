@@ -19,17 +19,23 @@ body {
 }
 
 /* Typography */
+h1, h2, h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
 h1 {
     font-size: 2.5rem;
-    color: #2c3e50;
     text-align: center;
     margin-bottom: 1.5rem;
 }
 
 h2 {
     font-size: 1.8rem;
-    color: #34495e;
-    margin-bottom: 1rem;
+}
+
+h3 {
+    font-size: 1.3rem;
 }
 
 /* Form styles */
@@ -73,9 +79,8 @@ select {
 }
 
 button {
-    display: block;
-    width: 100%;
-    padding: 1rem;
+    display: inline-block;
+    padding: 0.8rem 1.5rem;
     background: #3498db;
     color: #ffffff;
     border: none;
@@ -94,12 +99,88 @@ button:disabled {
     cursor: not-allowed;
 }
 
+/* Framework info styles */
+.framework-info {
+    background: #ecf0f1;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+/* Step styles */
+.step {
+    background: #ffffff;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
 /* AI Response styles */
 #ai-response {
     background: #ffffff;
     padding: 2rem;
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
+}
+
+/* Feedback form styles */
+.feedback-form {
+    margin-top: 2rem;
+    padding: 1rem;
+    background: #ecf0f1;
+    border-radius: 4px;
+}
+
+.rating {
+    font-size: 1.5rem;
+    color: #f1c40f;
+    cursor: pointer;
+}
+
+.rating span {
+    transition: color 0.2s;
+}
+
+.rating span.selected {
+    color: #f39c12;
+}
+
+/* Saved decisions styles */
+.saved-decisions {
+    margin-top: 2rem;
+}
+
+.saved-decisions ul {
+    list-style-type: none;
+}
+
+.saved-decisions li {
+    background: #ffffff;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Decision comparison styles */
+.decision-comparison {
+    margin-top: 2rem;
+}
+
+.decision-comparison select {
+    height: auto;
+    min-height: 100px;
+}
+
+/* Error styles */
+.error {
+    color: #e74c3c;
+    background: #fadbd8;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
 }
 
 /* Responsive design */
@@ -114,6 +195,10 @@ button:disabled {
 
     form, #ai-response {
         padding: 1rem;
+    }
+
+    button {
+        width: 100%;
     }
 }
 
@@ -134,34 +219,82 @@ button:disabled {
     animation: pulse 1.5s infinite;
 }
 
-/* Styling for saved decisions (if implemented) */
-.saved-decision {
-    background: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-}
-
-.saved-decision h3 {
-    color: #2c3e50;
-    margin-bottom: 0.5rem;
-}
-
-.saved-decision p {
-    color: #7f8c8d;
-    font-size: 0.9rem;
-}
-
 /* Additional utility classes */
 .text-center {
     text-align: center;
+}
+
+.mt-1 {
+    margin-top: 1rem;
 }
 
 .mt-2 {
     margin-top: 2rem;
 }
 
+.mb-1 {
+    margin-bottom: 1rem;
+}
+
 .mb-2 {
     margin-bottom: 2rem;
+}
+
+.p-1 {
+    padding: 1rem;
+}
+
+.p-2 {
+    padding: 2rem;
+}
+
+.bg-white {
+    background-color: #ffffff;
+}
+
+.bg-light {
+    background-color: #f8f9fa;
+}
+
+.rounded {
+    border-radius: 4px;
+}
+
+.shadow {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Accessibility improvements */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Focus styles for better keyboard navigation */
+:focus {
+    outline: 2px solid #3498db;
+    outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+    body {
+        background-color: #ffffff;
+    }
+
+    .container {
+        max-width: 100%;
+        padding: 0;
+    }
+
+    button, .feedback-form, .decision-comparison {
+        display: none;
+    }
 }
