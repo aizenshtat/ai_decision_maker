@@ -12,6 +12,12 @@
         <form id="decision-form">
             <label for="user-input">What decision do you need help with?</label>
             <input type="text" id="user-input" name="user_input" required>
+            <label for="decision-type">Type of Decision:</label>
+            <select id="decision-type" name="decision_type">
+                <option value="personal">Personal</option>
+                <option value="business">Business</option>
+                <option value="ethical">Ethical</option>
+            </select>
             <button type="submit">Get AI Suggestion</button>
         </form>
         <div id="ai-response"></div>
@@ -20,13 +26,15 @@
         document.getElementById('decision-form').addEventListener('submit', function(e) {
             e.preventDefault();
             const userInput = document.getElementById('user-input').value;
+            const decisionType = document.getElementById('decision-type').value;
             fetch('/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
                 body: new URLSearchParams({
-                    'user_input': userInput
+                    'user_input': userInput,
+                    'decision_type': decisionType
                 })
             })
             .then(response => response.json())
