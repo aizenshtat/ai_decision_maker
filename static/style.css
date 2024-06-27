@@ -105,8 +105,13 @@ button:hover {
 }
 
 button:disabled {
-    background: #bdc3c7;
+    background-color: #bdc3c7;
     cursor: not-allowed;
+    opacity: 0.7;
+}
+
+button:disabled:hover {
+    background-color: #bdc3c7;
 }
 
 /* Decision making process */
@@ -118,12 +123,24 @@ button:disabled {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-.progress-bar {
-    height: 8px;
+.progress-container {
+    width: 100%;
     background-color: #e0e0e0;
-    border-radius: 4px;
-    margin-top: 2rem;
-    overflow: hidden;
+    border-radius: 5px;
+    margin: 20px 0;
+}
+
+.progress-bar {
+    height: 20px;
+    background-color: #3498db;
+    border-radius: 5px;
+    transition: width 0.5s ease-in-out;
+}
+
+.progress-text {
+    text-align: center;
+    font-weight: bold;
+    color: #3498db;
 }
 
 .progress-bar-fill {
@@ -181,12 +198,14 @@ button:disabled {
     padding: 1rem;
     background: #f8f9fa;
     border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .rating {
-    font-size: 1.5rem;
+    font-size: 2rem;
     color: #f1c40f;
     cursor: pointer;
+    margin-bottom: 1rem;
 }
 
 .rating span {
@@ -195,6 +214,16 @@ button:disabled {
 
 .rating span.selected {
     color: #f39c12;
+}
+
+.feedback-submitted {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #e8f5e9;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: bold;
+    color: #4caf50;
 }
 
 .user-feedback {

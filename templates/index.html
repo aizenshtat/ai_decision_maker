@@ -43,8 +43,13 @@
                     <p>${aiSuggestion}</p>
                 </div>
                 <textarea v-model="currentStepInput" :placeholder="'Your thoughts for ' + currentStep.title"></textarea>
-                <button @click="submitStep" :disabled="!currentStepInput">Next Step</button>
-                <div class="progress-bar" :style="{ width: progress + '%' }"></div>
+                <button @click="submitStep" :disabled="!currentStepInput || isLoading">
+                    ${isLoading ? 'Processing...' : 'Next Step'}
+                </button>
+                <div class="progress-container">
+                    <div class="progress-bar" :style="{ width: progress + '%' }"></div>
+                </div>
+                <p class="progress-text">${Math.round(progress)}% Complete</p>
             </div>
     
             <div v-else>
@@ -55,6 +60,20 @@
                 <button @click="saveDecision" :disabled="decisionSaved">
                     ${decisionSaved ? 'Decision Saved' : 'Save Decision'}
                 </button>
+            
+                <div v-if="decisionSaved && !feedbackSubmitted" class="feedback-form">
+                    <h3>Provide Feedback</h3>
+                    <p>How helpful was this decision-making process?</p>
+                    <div class="rating">
+                        <span v-for="i in 5" :key="i" @click="rating = i" :class="{ 'selected': rating >= i }">☆</span>
+                    </div>
+                    <textarea v-model="feedbackComment" placeholder="Additional comments (optional)"></textarea>
+                    <button @click="submitFeedback">Submit Feedback</button>
+                </div>
+            
+                <div v-if="feedbackSubmitted" class="feedback-submitted">
+                    <p>Thank you for your feedback!</p>
+                </div>
             </div>
     
             <div v-if="error" class="error">
@@ -123,7 +142,10 @@
             comparisonResult: null,
             decisionSaved: false,
             rating: 0,
-            feedbackComment: ''
+            feedbackComment: '',
+            feedbackSubmitted: false,
+            savedDecisionId: null,
+            isLoading: false            
         },
         methods: {
             updateFrameworkInfo() {
@@ -134,6 +156,8 @@
                 this.getNextStep();
             },
             submitStep() {
+                if (this.isLoading) return; // Prevent multiple submissions
+                this.isLoading = true;
                 this.allStepInputs.push(this.currentStepInput);
                 this.getNextStep();
             },
@@ -148,6 +172,7 @@
                     if (response.data.completed) {
                         this.decisionCompleted = true;
                         this.decisionSummary = response.data.summary;
+                        this.progress = 100;
                     } else {
                         this.currentStep = response.data.step;
                         this.aiSuggestion = response.data.ai_suggestion;
@@ -158,6 +183,11 @@
                 .catch(error => {
                     console.error('Error getting next step:', error);
                     this.error = 'Error in decision process. Please try again.';
+                    // If there's an error, we allow the user to try again
+                    this.allStepInputs.pop(); // Remove the last input as it wasn't processed
+                })
+                .finally(() => {
+                    this.isLoading = false;
                 });
             },
             saveDecision() {
@@ -169,8 +199,9 @@
                         summary: this.decisionSummary
                     })
                 })
-                .then(() => {
+                .then(response => {
                     this.decisionSaved = true;
+                    this.savedDecisionId = response.data.id;
                     this.fetchSavedDecisions();
                 })
                 .catch(error => {
@@ -229,22 +260,21 @@
                 });
             },
             submitFeedback() {
-                if (!this.rating) return;
+                if (!this.rating || !this.savedDecisionId) return;
                 axios.post('/submit_feedback', {
+                    decision_id: this.savedDecisionId,
                     rating: this.rating,
                     comment: this.feedbackComment
                 })
                 .then(() => {
-                    alert('Thank you for your feedback!');
-                    this.rating = 0;
-                    this.feedbackComment = '';
-                    this.fetchFeedback();
+                    this.feedbackSubmitted = true;
+                    this.fetchSavedDecisions();
                 })
                 .catch(error => {
                     console.error('Error submitting feedback:', error);
                     this.error = 'Error submitting feedback. Please try again.';
                 });
-            }
+            },
         },
         mounted() {
             axios.get('/frameworks')

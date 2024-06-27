@@ -57,11 +57,13 @@ class Decision(db.Model):
     framework = db.Column(db.String(50), nullable=False)
     response = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    feedback = db.relationship('Feedback', backref='decision', lazy='dynamic')
 
 # Feedback model
 class Feedback(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    decision_id = db.Column(db.Integer, db.ForeignKey('decision.id'), nullable=False)
     rating = db.Column(db.Integer, nullable=False)
     comment = db.Column(db.Text)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -216,7 +218,7 @@ def save_decision():
     )
     db.session.add(new_decision)
     db.session.commit()
-    return jsonify({'message': 'Decision saved successfully'}), 200
+    return jsonify({'message': 'Decision saved successfully', 'id': new_decision.id}), 200
 
 @app.route('/get_decisions', methods=['GET'])
 @login_required
@@ -227,7 +229,11 @@ def get_decisions():
         'question': d.question,
         'framework': d.framework,
         'response': d.response,
-        'created_at': d.created_at.isoformat()
+        'created_at': d.created_at.isoformat(),
+        'feedback': {
+            'rating': d.feedback.first().rating if d.feedback.first() else None,
+            'comment': d.feedback.first().comment if d.feedback.first() else None
+        } if d.feedback.first() else None
     } for d in decisions])
 
 @app.route('/check_login')
@@ -256,13 +262,24 @@ def compare_decisions():
 @login_required
 def submit_feedback():
     data = request.json
+    decision_id = data.get('decision_id')
+    
+    if not decision_id:
+        return jsonify({'error': 'No decision_id provided'}), 400
+    
+    decision = Decision.query.get(decision_id)
+    if not decision or decision.user_id != current_user.id:
+        return jsonify({'error': 'Invalid decision_id'}), 400
+    
     new_feedback = Feedback(
         user_id=current_user.id,
+        decision_id=decision_id,
         rating=data['rating'],
         comment=data.get('comment', '')
     )
     db.session.add(new_feedback)
     db.session.commit()
+    app.logger.info(f"Feedback submitted for decision {decision_id}")
     return jsonify({'message': 'Feedback submitted successfully'}), 200
 
 @app.route('/get_feedback', methods=['GET'])
@@ -288,17 +305,25 @@ def get_next_step():
     app.logger.info(f"Step {current_step + 1} for decision: '{decision_question}' (Type: {decision_type})")
 
     framework = get_decision_framework(decision_type)
-    if current_step >= len(framework['steps']):
+    total_steps = len(framework['steps'])
+
+    if current_step >= total_steps:
         app.logger.info(f"Decision process completed for: '{decision_question}'")
-        return jsonify({'completed': True, 'summary': generate_decision_summary(decision_type, decision_question, user_input)})
+        return jsonify({
+            'completed': True, 
+            'summary': generate_decision_summary(decision_type, decision_question, user_input),
+            'progress': 100
+        })
 
     next_step = framework['steps'][current_step]
     ai_suggestion = get_ai_suggestion(decision_type, next_step, decision_question, user_input)
 
+    progress = ((current_step + 1) / total_steps) * 100
+
     return jsonify({
         'step': next_step,
         'ai_suggestion': ai_suggestion,
-        'progress': (current_step + 1) / len(framework['steps']) * 100
+        'progress': progress
     })
 
 def get_ai_suggestion(decision_type, step, decision_question, user_input):
@@ -326,15 +351,37 @@ def get_ai_suggestion(decision_type, step, decision_question, user_input):
     
     return suggestion
 
-def generate_decision_summary(decision_type, user_input):
-    prompt = f"Summarize the following {decision_type} decision process and provide a final recommendation based on this input: {user_input}"
+def generate_decision_summary(decision_type, decision_question, user_input):
+    prompt = f"""
+    Decision Type: {decision_type}
+    Decision Question: {decision_question}
+    User's Input: {user_input}
+
+    Please provide a comprehensive summary of the decision-making process and a final recommendation based on the information provided.
+    Include:
+    1. A restatement of the decision question
+    2. Key points considered during the process
+    3. Potential pros and cons of the decision
+    4. A final recommendation or conclusion
+
+    Format the summary in a clear, easy-to-read structure.
+    """
     
-    message = client.messages.create(
-        model="claude-3-5-sonnet-20240620",
-        max_tokens=500,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return message.content[0].text
+    app.logger.info(f"Generating decision summary for: '{decision_question}'")
+    
+    try:
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        summary = message.content[0].text
+        app.logger.info("Decision summary generated successfully")
+    except Exception as e:
+        app.logger.error(f"Error generating decision summary: {str(e)}")
+        summary = "Sorry, I couldn't generate a summary at this time. Please try again."
+    
+    return summary
 
 @app.errorhandler(Exception)
 def handle_exception(e):
