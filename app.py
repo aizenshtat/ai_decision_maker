@@ -27,7 +27,9 @@ client = anthropic.Anthropic(api_key=app.config['ANTHROPIC_API_KEY'])
 
 # Set up logging
 if not app.debug:
-    file_handler = RotatingFileHandler('decision_maker.log', maxBytes=10240, backupCount=10)
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    file_handler = RotatingFileHandler('logs/decision_maker.log', maxBytes=10240, backupCount=10)
     file_handler.setFormatter(logging.Formatter(
         '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'))
     file_handler.setLevel(logging.INFO)
@@ -273,6 +275,66 @@ def get_feedback():
         'comment': f.comment,
         'created_at': f.created_at.isoformat()
     } for f in feedback])
+
+@app.route('/get_next_step', methods=['POST'])
+@login_required
+def get_next_step():
+    data = request.json
+    decision_type = data.get('decision_type')
+    current_step = data.get('current_step', 0)
+    decision_question = data.get('decision_question', '')
+    user_input = data.get('user_input', '')
+
+    app.logger.info(f"Step {current_step + 1} for decision: '{decision_question}' (Type: {decision_type})")
+
+    framework = get_decision_framework(decision_type)
+    if current_step >= len(framework['steps']):
+        app.logger.info(f"Decision process completed for: '{decision_question}'")
+        return jsonify({'completed': True, 'summary': generate_decision_summary(decision_type, decision_question, user_input)})
+
+    next_step = framework['steps'][current_step]
+    ai_suggestion = get_ai_suggestion(decision_type, next_step, decision_question, user_input)
+
+    return jsonify({
+        'step': next_step,
+        'ai_suggestion': ai_suggestion,
+        'progress': (current_step + 1) / len(framework['steps']) * 100
+    })
+
+def get_ai_suggestion(decision_type, step, decision_question, user_input):
+    prompt = f"""
+    Decision Type: {decision_type}
+    Decision Question: {decision_question}
+    Current Step: {step['title']}
+    Step Description: {step['description']}
+    User's Previous Input: {user_input}
+
+    Please provide a helpful suggestion for this step of the decision-making process.
+    """
+    
+    try:
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        suggestion = message.content[0].text
+        app.logger.info(f"AI suggestion generated for step: {step['title']}")
+    except Exception as e:
+        app.logger.error(f"Error generating AI suggestion for step {step['title']}: {str(e)}")
+        suggestion = "Sorry, I couldn't generate a suggestion at this time. Please try again."
+    
+    return suggestion
+
+def generate_decision_summary(decision_type, user_input):
+    prompt = f"Summarize the following {decision_type} decision process and provide a final recommendation based on this input: {user_input}"
+    
+    message = client.messages.create(
+        model="claude-3-5-sonnet-20240620",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return message.content[0].text
 
 @app.errorhandler(Exception)
 def handle_exception(e):

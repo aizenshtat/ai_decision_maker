@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Decision Maker</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
@@ -15,7 +16,8 @@
             <p>Please <a href="/login">login</a> or <a href="/register">register</a> to use the AI Decision Maker.</p>
         </div>
         <div v-else>
-            <form @submit.prevent="getDecision">
+            <div v-if="!decisionStarted">
+                <h2>Start a New Decision</h2>
                 <label for="decision-question">What decision do you need help with?</label>
                 <textarea id="decision-question" v-model="decisionQuestion" required></textarea>
                 
@@ -30,52 +32,35 @@
                     <p><strong>Example:</strong> ${selectedFramework.example}</p>
                 </div>
                 
-                <div v-for="(step, index) in frameworkSteps" :key="index">
-                    <h3>${step.title}</h3>
-                    <p>${step.description}</p>
-                    <textarea v-model="userInputs[index]" :placeholder="'Your thoughts for ' + step.title"></textarea>
-                </div>
-                
-                <button type="submit" :disabled="loading">
-                    ${loading ? 'Thinking...' : 'Get AI Suggestion'}
-                </button>
-            </form>
-            
-            <div v-if="error" class="error">
-                ${error}
+                <button @click="startDecision" :disabled="!decisionQuestion">Start Decision Process</button>
             </div>
-            
-            <div v-if="aiResponse" id="ai-response">
-                <h2>AI Suggestions:</h2>
-                <div v-for="(suggestion, index) in aiResponse" :key="index">
-                    <h3>${suggestion.step}</h3>
-                    <p>${suggestion.advice}</p>
+    
+            <div v-else-if="!decisionCompleted">
+                <h2>${currentStep.title}</h2>
+                <p>${currentStep.description}</p>
+                <div class="ai-suggestion">
+                    <h3>AI Suggestion:</h3>
+                    <p>${aiSuggestion}</p>
+                </div>
+                <textarea v-model="currentStepInput" :placeholder="'Your thoughts for ' + currentStep.title"></textarea>
+                <button @click="submitStep" :disabled="!currentStepInput">Next Step</button>
+                <div class="progress-bar" :style="{ width: progress + '%' }"></div>
+            </div>
+    
+            <div v-else>
+                <h2>Decision Summary</h2>
+                <div class="decision-summary">
+                    <p>${decisionSummary}</p>
                 </div>
                 <button @click="saveDecision" :disabled="decisionSaved">
                     ${decisionSaved ? 'Decision Saved' : 'Save Decision'}
                 </button>
-                
-                <div class="feedback-form">
-                    <h3>Was this helpful?</h3>
-                    <div class="rating">
-                        <span v-for="i in 5" :key="i" @click="setRating(i)" :class="{ 'selected': rating >= i }">☆</span>
-                    </div>
-                    <textarea v-model="feedbackComment" placeholder="Additional comments (optional)"></textarea>
-                    <button @click="submitFeedback" :disabled="!rating">Submit Feedback</button>
-                </div>
             </div>
-
-            <div v-if="userFeedback.length > 0" class="user-feedback">
-                <h2>Your Feedback</h2>
-                <ul>
-                    <li v-for="feedback in userFeedback" :key="feedback.id">
-                        <p>Rating: ${feedback.rating}/5</p>
-                        <p v-if="feedback.comment">Comment: ${feedback.comment}</p>
-                        <p>Submitted: ${new Date(feedback.created_at).toLocaleString()}</p>
-                    </li>
-                </ul>
+    
+            <div v-if="error" class="error">
+                ${error}
             </div>
-
+    
             <div v-if="savedDecisions.length > 0" class="saved-decisions">
                 <h2>Your Saved Decisions</h2>
                 <ul>
@@ -87,7 +72,7 @@
                     </li>
                 </ul>
             </div>
-
+    
             <div v-if="savedDecisions.length > 1" class="decision-comparison">
                 <h2>Compare Decisions</h2>
                 <select v-model="selectedDecisions" multiple>
@@ -99,164 +84,181 @@
                     <p>${comparisonResult}</p>
                 </div>
             </div>
+    
+            <div v-if="userFeedback.length > 0" class="user-feedback">
+                <h2>Your Feedback</h2>
+                <ul>
+                    <li v-for="feedback in userFeedback" :key="feedback.id">
+                        <p>Rating: ${feedback.rating}/5</p>
+                        <p v-if="feedback.comment">Comment: ${feedback.comment}</p>
+                        <p>Submitted: ${new Date(feedback.created_at).toLocaleString()}</p>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
-
+    
     <script>
-        new Vue({
-            el: '#app',
-            delimiters: ['${', '}'],
-            data: {
-                isLoggedIn: false,
-                decisionQuestion: '',
-                decisionType: 'personal',
-                frameworks: {},
-                selectedFramework: null,
-                frameworkSteps: [],
-                userInputs: [],
-                aiResponse: null,
-                loading: false,
-                error: '',
-                decisionSaved: false,
-                savedDecisions: [],
-                rating: 0,
-                feedbackComment: '',
-                selectedDecisions: [],
-                comparisonResult: null,
-                userFeedback: []
+    new Vue({
+        el: '#app',
+        delimiters: ['${', '}'],
+        data: {
+            isLoggedIn: false,
+            decisionQuestion: '',
+            decisionType: 'personal',
+            frameworks: {},
+            selectedFramework: null,
+            decisionStarted: false,
+            currentStep: {},
+            currentStepInput: '',
+            aiSuggestion: '',
+            progress: 0,
+            decisionCompleted: false,
+            decisionSummary: '',
+            allStepInputs: [],
+            error: '',
+            savedDecisions: [],
+            userFeedback: [],
+            selectedDecisions: [],
+            comparisonResult: null,
+            decisionSaved: false,
+            rating: 0,
+            feedbackComment: ''
+        },
+        methods: {
+            updateFrameworkInfo() {
+                this.selectedFramework = this.frameworks[this.decisionType];
             },
-            methods: {
-                updateFrameworkInfo() {
-                    this.selectedFramework = this.frameworks[this.decisionType];
-                    this.frameworkSteps = this.selectedFramework.steps;
-                    this.userInputs = new Array(this.frameworkSteps.length).fill('');
-                },
-                getDecision() {
-                    this.loading = true;
-                    this.decisionSaved = false;
-                    this.error = '';
-                    axios.post('/', {
-                        user_input: this.decisionQuestion,
-                        decision_type: this.decisionType,
-                        step_inputs: this.userInputs
-                    }, {
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
+            startDecision() {
+                this.decisionStarted = true;
+                this.getNextStep();
+            },
+            submitStep() {
+                this.allStepInputs.push(this.currentStepInput);
+                this.getNextStep();
+            },
+            getNextStep() {
+                axios.post('/get_next_step', {
+                    decision_type: this.decisionType,
+                    current_step: this.allStepInputs.length,
+                    decision_question: this.decisionQuestion,
+                    user_input: this.allStepInputs.join(' ')
+                })
+                .then(response => {
+                    if (response.data.completed) {
+                        this.decisionCompleted = true;
+                        this.decisionSummary = response.data.summary;
+                    } else {
+                        this.currentStep = response.data.step;
+                        this.aiSuggestion = response.data.ai_suggestion;
+                        this.progress = response.data.progress;
+                        this.currentStepInput = '';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error getting next step:', error);
+                    this.error = 'Error in decision process. Please try again.';
+                });
+            },
+            saveDecision() {
+                axios.post('/save_decision', {
+                    question: this.decisionQuestion,
+                    framework: this.decisionType,
+                    response: JSON.stringify({
+                        steps: this.allStepInputs,
+                        summary: this.decisionSummary
                     })
-                    .then(response => {
-                        this.aiResponse = response.data.decision;
-                        this.loading = false;
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        this.error = error.response.data.error || 'An error occurred while processing your request';
-                        this.loading = false;
-                    });
-                },
-                saveDecision() {
-                    axios.post('/save_decision', {
-                        question: this.decisionQuestion,
-                        framework: this.decisionType,
-                        response: JSON.stringify(this.aiResponse)
-                    }, {
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                    .then(() => {
-                        this.decisionSaved = true;
+                })
+                .then(() => {
+                    this.decisionSaved = true;
+                    this.fetchSavedDecisions();
+                })
+                .catch(error => {
+                    console.error('Error saving decision:', error);
+                    this.error = 'Error saving decision. Please try again.';
+                });
+            },
+            fetchSavedDecisions() {
+                axios.get('/get_decisions')
+                .then(response => {
+                    this.savedDecisions = response.data;
+                })
+                .catch(error => {
+                    console.error('Error fetching saved decisions:', error);
+                    this.error = 'Error fetching saved decisions. Please try again.';
+                });
+            },
+            showDecisionDetails(decision) {
+                alert(`Question: ${decision.question}\n\nResponse: ${decision.response}`);
+            },
+            compareDecisions() {
+                if (this.selectedDecisions.length < 2) return;
+                axios.post('/compare_decisions', {
+                    decision_ids: this.selectedDecisions
+                })
+                .then(response => {
+                    this.comparisonResult = response.data.comparison;
+                })
+                .catch(error => {
+                    console.error('Error comparing decisions:', error);
+                    this.error = 'Error comparing decisions. Please try again.';
+                });
+            },
+            checkLoginStatus() {
+                axios.get('/check_login')
+                .then(response => {
+                    this.isLoggedIn = response.data.logged_in;
+                    if (this.isLoggedIn) {
                         this.fetchSavedDecisions();
-                    })
-                    .catch(error => {
-                        console.error('Error saving decision:', error);
-                        this.error = 'Error saving decision. Please try again.';
-                    });
-                },
-                fetchSavedDecisions() {
-                    axios.get('/get_decisions')
-                    .then(response => {
-                        this.savedDecisions = response.data;
-                    })
-                    .catch(error => {
-                        console.error('Error fetching saved decisions:', error);
-                        this.error = 'Error fetching saved decisions. Please try again.';
-                    });
-                },
-                showDecisionDetails(decision) {
-                    alert(`Question: ${decision.question}\n\nResponse: ${decision.response}`);
-                },
-                setRating(value) {
-                    this.rating = value;
-                },
-                submitFeedback() {
-                    if (!this.rating) return;
-                    axios.post('/submit_feedback', {
-                        rating: this.rating,
-                        comment: this.feedbackComment
-                    })
-                    .then(() => {
-                        alert('Thank you for your feedback!');
-                        this.rating = 0;
-                        this.feedbackComment = '';
-                        this.fetchFeedback(); 
-                    })
-                    .catch(error => {
-                        console.error('Error submitting feedback:', error);
-                        this.error = 'Error submitting feedback. Please try again.';
-                    });
-                },
-                fetchFeedback() {
-                    axios.get('/get_feedback')
-                        .then(response => {
-                            this.userFeedback = response.data;
-                        })
-                        .catch(error => {
-                            console.error('Error fetching feedback:', error);
-                            this.error = 'Error fetching feedback. Please try again.';
-                        });
-                },
-                compareDecisions() {
-                    if (this.selectedDecisions.length < 2) return;
-                    axios.post('/compare_decisions', {
-                        decision_ids: this.selectedDecisions
-                    })
-                    .then(response => {
-                        this.comparisonResult = response.data.comparison;
-                    })
-                    .catch(error => {
-                        console.error('Error comparing decisions:', error);
-                        this.error = 'Error comparing decisions. Please try again.';
-                    });
-                },
-                checkLoginStatus() {
-                    axios.get('/check_login')
-                    .then(response => {
-                        this.isLoggedIn = response.data.logged_in;
-                        if (this.isLoggedIn) {
-                            this.fetchSavedDecisions();
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error checking login status:', error);
-                        this.error = 'Error checking login status. Please try refreshing the page.';
-                    });
-                }
+                        this.fetchFeedback();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking login status:', error);
+                    this.error = 'Error checking login status. Please try refreshing the page.';
+                });
             },
-            mounted() {
-                axios.get('/frameworks')
-                    .then(response => {
-                        this.frameworks = response.data;
-                        this.updateFrameworkInfo();
-                    })
-                    .catch(error => {
-                        console.error('Error fetching frameworks:', error);
-                        this.error = 'Error fetching decision frameworks. Please try refreshing the page.';
-                    });
-                this.checkLoginStatus();
-                this.fetchFeedback();
+            fetchFeedback() {
+                axios.get('/get_feedback')
+                .then(response => {
+                    this.userFeedback = response.data;
+                })
+                .catch(error => {
+                    console.error('Error fetching feedback:', error);
+                    this.error = 'Error fetching feedback. Please try again.';
+                });
+            },
+            submitFeedback() {
+                if (!this.rating) return;
+                axios.post('/submit_feedback', {
+                    rating: this.rating,
+                    comment: this.feedbackComment
+                })
+                .then(() => {
+                    alert('Thank you for your feedback!');
+                    this.rating = 0;
+                    this.feedbackComment = '';
+                    this.fetchFeedback();
+                })
+                .catch(error => {
+                    console.error('Error submitting feedback:', error);
+                    this.error = 'Error submitting feedback. Please try again.';
+                });
             }
-        });
+        },
+        mounted() {
+            axios.get('/frameworks')
+                .then(response => {
+                    this.frameworks = response.data;
+                    this.updateFrameworkInfo();
+                })
+                .catch(error => {
+                    console.error('Error fetching frameworks:', error);
+                    this.error = 'Error fetching decision frameworks. Please try refreshing the page.';
+                });
+            this.checkLoginStatus();
+        }
+    });
     </script>
 </body>
 </html>
