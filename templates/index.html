@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Decision Maker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>AI Decision Maker</h1>
+        <form id="decision-form">
+            <label for="user-input">What decision do you need help with?</label>
+            <input type="text" id="user-input" name="user_input" required>
+            <button type="submit">Get AI Suggestion</button>
+        </form>
+        <div id="ai-response"></div>
+    </div>
+    <script>
+        document.getElementById('decision-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const userInput = document.getElementById('user-input').value;
+            fetch('/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    'user_input': userInput
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('ai-response').innerHTML = `<p><strong>AI Suggestion:</strong> ${data.decision}</p>`;
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+        });
+    </script>
+</body>
+</html>
