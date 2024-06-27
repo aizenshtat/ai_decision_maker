@@ -1,55 +1,167 @@
-body {
-    font-family: Arial, sans-serif;
-    line-height: 1.6;
+/* Reset and base styles */
+* {
     margin: 0;
     padding: 0;
-    background-color: #f4f4f4;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f4f7f9;
 }
 
 .container {
-    width: 80%;
-    margin: auto;
-    overflow: hidden;
+    max-width: 800px;
+    margin: 0 auto;
     padding: 20px;
 }
 
+/* Typography */
 h1 {
-    color: #333;
+    font-size: 2.5rem;
+    color: #2c3e50;
     text-align: center;
+    margin-bottom: 1.5rem;
 }
 
+h2 {
+    font-size: 1.8rem;
+    color: #34495e;
+    margin-bottom: 1rem;
+}
+
+/* Form styles */
 form {
-    background: #fff;
-    padding: 20px;
-    margin-bottom: 20px;
+    background: #ffffff;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
 }
 
 label {
     display: block;
-    margin-bottom: 10px;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+    color: #2c3e50;
 }
 
-input[type="text"] {
+textarea, select {
     width: 100%;
-    padding: 10px;
-    margin-bottom: 10px;
+    padding: 0.8rem;
+    margin-bottom: 1rem;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+textarea {
+    min-height: 100px;
+    resize: vertical;
+}
+
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg fill="%23333" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/><path d="M0 0h24v24H0z" fill="none"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 20px;
 }
 
 button {
     display: block;
     width: 100%;
-    padding: 10px;
-    background: #333;
-    color: #fff;
+    padding: 1rem;
+    background: #3498db;
+    color: #ffffff;
     border: none;
+    border-radius: 4px;
+    font-size: 1rem;
     cursor: pointer;
+    transition: background-color 0.3s ease;
 }
 
 button:hover {
-    background: #555;
+    background: #2980b9;
 }
 
+button:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
+}
+
+/* AI Response styles */
 #ai-response {
-    background: #fff;
-    padding: 20px;
+    background: #ffffff;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+    .container {
+        padding: 10px;
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
+
+    form, #ai-response {
+        padding: 1rem;
+    }
+}
+
+/* Animation for loading state */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+button:disabled {
+    animation: pulse 1.5s infinite;
+}
+
+/* Styling for saved decisions (if implemented) */
+.saved-decision {
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.saved-decision h3 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.saved-decision p {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+}
+
+/* Additional utility classes */
+.text-center {
+    text-align: center;
+}
+
+.mt-2 {
+    margin-top: 2rem;
+}
+
+.mb-2 {
+    margin-bottom: 2rem;
 }

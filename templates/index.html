@@ -5,45 +5,156 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Decision Maker</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 </head>
 <body>
-    <div class="container">
+    <div id="app" class="container">
         <h1>AI Decision Maker</h1>
-        <form id="decision-form">
-            <label for="user-input">What decision do you need help with?</label>
-            <input type="text" id="user-input" name="user_input" required>
-            <label for="decision-type">Type of Decision:</label>
-            <select id="decision-type" name="decision_type">
-                <option value="personal">Personal</option>
-                <option value="business">Business</option>
-                <option value="ethical">Ethical</option>
-            </select>
-            <button type="submit">Get AI Suggestion</button>
-        </form>
-        <div id="ai-response"></div>
+        <div v-if="!isLoggedIn">
+            <p>Please <a href="/login">login</a> or <a href="/register">register</a> to use the AI Decision Maker.</p>
+        </div>
+        <div v-else>
+            <form @submit.prevent="getDecision">
+                <label for="user-input">What decision do you need help with?</label>
+                <textarea id="user-input" v-model="userInput" required></textarea>
+                
+                <label for="decision-type">Type of Decision:</label>
+                <select id="decision-type" v-model="decisionType">
+                    <option v-for="(name, key) in frameworks" :value="key">${name}</option>
+                </select>
+                
+                <button type="submit" :disabled="loading">
+                    ${loading ? 'Thinking...' : 'Get AI Suggestion'}
+                </button>
+            </form>
+            
+            <div v-if="error" class="error">
+                ${error}
+            </div>
+            
+            <div v-if="aiResponse" id="ai-response">
+                <h2>AI Suggestion:</h2>
+                <div v-html="formattedResponse"></div>
+                <button @click="saveDecision" :disabled="decisionSaved">
+                    ${decisionSaved ? 'Decision Saved' : 'Save Decision'}
+                </button>
+            </div>
+
+            <div v-if="savedDecisions.length > 0" class="saved-decisions">
+                <h2>Your Saved Decisions</h2>
+                <ul>
+                    <li v-for="decision in savedDecisions" :key="decision.id">
+                        <h3>${decision.question}</h3>
+                        <p>Framework: ${decision.framework}</p>
+                        <p>Created: ${new Date(decision.created_at).toLocaleString()}</p>
+                        <button @click="showDecisionDetails(decision)">View Details</button>
+                    </li>
+                </ul>
+            </div>
+        </div>
     </div>
+
     <script>
-        document.getElementById('decision-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const userInput = document.getElementById('user-input').value;
-            const decisionType = document.getElementById('decision-type').value;
-            fetch('/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+        new Vue({
+            el: '#app',
+            delimiters: ['${', '}'],
+            data: {
+                userInput: '',
+                decisionType: 'personal',
+                aiResponse: '',
+                loading: false,
+                frameworks: {},
+                isLoggedIn: false,
+                decisionSaved: false,
+                savedDecisions: [],
+                error: ''
+            },
+            computed: {
+                formattedResponse() {
+                    return this.aiResponse.replace(/\n/g, '<br>');
+                }
+            },
+            methods: {
+                getDecision() {
+                    this.loading = true;
+                    this.decisionSaved = false;
+                    this.error = '';
+                    axios.post('/', {
+                        user_input: this.userInput,
+                        decision_type: this.decisionType
+                    }, {
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        this.aiResponse = response.data.decision;
+                        this.loading = false;
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        this.error = error.response.data.error || 'An error occurred while processing your request';
+                        this.loading = false;
+                    });
                 },
-                body: new URLSearchParams({
-                    'user_input': userInput,
-                    'decision_type': decisionType
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('ai-response').innerHTML = `<p><strong>AI Suggestion:</strong> ${data.decision}</p>`;
-            })
-            .catch((error) => {
-                console.error('Error:', error);
-            });
+                saveDecision() {
+                    axios.post('/save_decision', {
+                        question: this.userInput,
+                        framework: this.decisionType,
+                        response: this.aiResponse
+                    }, {
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(() => {
+                        this.decisionSaved = true;
+                        this.fetchSavedDecisions();
+                    })
+                    .catch(error => {
+                        console.error('Error saving decision:', error);
+                        this.error = 'Error saving decision. Please try again.';
+                    });
+                },
+                fetchSavedDecisions() {
+                    axios.get('/get_decisions')
+                    .then(response => {
+                        this.savedDecisions = response.data;
+                    })
+                    .catch(error => {
+                        console.error('Error fetching saved decisions:', error);
+                        this.error = 'Error fetching saved decisions. Please try again.';
+                    });
+                },
+                showDecisionDetails(decision) {
+                    alert(`Question: ${decision.question}\n\nResponse: ${decision.response}`);
+                },
+                checkLoginStatus() {
+                    axios.get('/check_login')
+                    .then(response => {
+                        this.isLoggedIn = response.data.logged_in;
+                        if (this.isLoggedIn) {
+                            this.fetchSavedDecisions();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking login status:', error);
+                        this.error = 'Error checking login status. Please try refreshing the page.';
+                    });
+                }
+            },
+            mounted() {
+                axios.get('/frameworks')
+                    .then(response => {
+                        this.frameworks = response.data;
+                    })
+                    .catch(error => {
+                        console.error('Error fetching frameworks:', error);
+                        this.error = 'Error fetching decision frameworks. Please try refreshing the page.';
+                    });
+                this.checkLoginStatus();
+            }
         });
     </script>
 </body>

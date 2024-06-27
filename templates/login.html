@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - AI Decision Maker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <div id="app" class="container">
+        <h1>Login</h1>
+        <form @submit.prevent="login">
+            <div>
+                <label for="username">Username:</label>
+                <input type="text" id="username" v-model="username" required>
+            </div>
+            <div>
+                <label for="password">Password:</label>
+                <input type="password" id="password" v-model="password" required>
+            </div>
+            <button type="submit">Login</button>
+        </form>
+        <p v-if="error" class="error">${error}</p>
+        <p>Don't have an account? <a href="/register">Register here</a></p>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            delimiters: ['${', '}'],
+            data: {
+                username: '',
+                password: '',
+                error: ''
+            },
+            methods: {
+                login() {
+                    axios.post('/login', {
+                        username: this.username,
+                        password: this.password
+                    }, {
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        window.location.href = '/';
+                    })
+                    .catch(error => {
+                        this.error = error.response.data.error || 'An error occurred during login';
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>
