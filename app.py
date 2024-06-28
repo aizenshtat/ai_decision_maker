@@ -1,3 +1,5 @@
+import re
+import json
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
@@ -73,11 +75,11 @@ DECISION_FRAMEWORKS = {
     "personal": {
         "name": "Personal Decision Framework",
         "steps": [
-            {"title": "Identify the decision", "description": "Clearly state the decision you need to make."},
-            {"title": "List options", "description": "Write down all possible options you can think of."},
-            {"title": "Weigh outcomes", "description": "Consider the potential outcomes of each option."},
-            {"title": "Align with values", "description": "Reflect on how each option aligns with your personal values and goals."},
-            {"title": "Make a choice", "description": "Based on the above factors, make your decision."}
+            {"title": "Formulate the decision", "description": "Refine the decision question based on AI suggestions."},
+            {"title": "List options", "description": "List and describe possible options, including pros and cons."},
+            {"title": "Define factors", "description": "Define the factors to consider when weighing outcomes."},
+            {"title": "Weigh outcomes", "description": "Evaluate each option based on the defined factors."},
+            {"title": "Make a choice", "description": "Select the final option based on the analysis."}
         ],
         "explanation": "Use this framework for personal decisions that affect your life and well-being.",
         "example": "Choosing a career path or deciding whether to move to a new city."
@@ -296,72 +298,120 @@ def get_feedback():
 @app.route('/get_next_step', methods=['POST'])
 @login_required
 def get_next_step():
-    data = request.json
-    decision_type = data.get('decision_type')
-    current_step = data.get('current_step', 0)
-    decision_question = data.get('decision_question', '')
-    user_input = data.get('user_input', '')
+    try:
+        data = request.json
+        decision_type = data.get('decision_type')
+        current_step = data.get('current_step', 0)
+        decision_question = data.get('decision_question', '')
+        user_inputs = data.get('user_inputs', {})
 
-    app.logger.info(f"Step {current_step + 1} for decision: '{decision_question}' (Type: {decision_type})")
+        app.logger.info(f"Step {current_step + 1} for decision: '{decision_question}' (Type: {decision_type})")
+        app.logger.info(f"User inputs: {user_inputs}")
 
-    framework = get_decision_framework(decision_type)
-    total_steps = len(framework['steps'])
+        framework = get_decision_framework(decision_type)
+        total_steps = len(framework['steps'])
 
-    if current_step >= total_steps:
-        app.logger.info(f"Decision process completed for: '{decision_question}'")
-        return jsonify({
-            'completed': True, 
-            'summary': generate_decision_summary(decision_type, decision_question, user_input),
-            'progress': 100
+        if current_step >= total_steps:
+            app.logger.info(f"Decision process completed for: '{decision_question}'")
+            return jsonify({
+                'completed': True, 
+                'summary': generate_decision_summary(decision_type, decision_question, user_inputs),
+                'progress': 100
+            })
+
+        next_step = framework['steps'][current_step]
+        ai_suggestion = get_ai_suggestion(decision_type, next_step, decision_question, user_inputs)
+
+        progress = ((current_step + 1) / total_steps) * 100
+
+        response = jsonify({
+            'step': next_step,
+            'ai_suggestion': ai_suggestion,
+            'progress': progress
         })
+        app.logger.info(f"Sending response for step: {next_step['title']}")
+        app.logger.info(f"AI Suggestion: {ai_suggestion}")
+        return response
+    except Exception as e:
+        app.logger.error(f"Error in get_next_step: {str(e)}")
+        return jsonify({'error': 'An error occurred while processing your request'}), 500
 
-    next_step = framework['steps'][current_step]
-    ai_suggestion = get_ai_suggestion(decision_type, next_step, decision_question, user_input)
+def clean_json_string(json_str):
+    # Remove any control characters
+    json_str = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', json_str)
+    # Replace any single backslashes that aren't already escaped
+    json_str = re.sub(r'(?<!\\)\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', json_str)
+    return json_str
 
-    progress = ((current_step + 1) / total_steps) * 100
 
-    return jsonify({
-        'step': next_step,
-        'ai_suggestion': ai_suggestion,
-        'progress': progress
-    })
-
-def get_ai_suggestion(decision_type, step, decision_question, user_input):
+def get_ai_suggestion(decision_type, step, decision_question, user_inputs):
     prompt = f"""
     Decision Type: {decision_type}
-    Decision Question: {decision_question}
+    Original Decision Question: {decision_question}
     Current Step: {step['title']}
     Step Description: {step['description']}
-    User's Previous Input: {user_input}
+    User's Previous Inputs: {json.dumps(user_inputs, indent=2)}
 
-    Please provide a helpful suggestion for this step of the decision-making process.
+    Please provide your response in a valid JSON format with the following structure:
+    {{
+        "suggestion": "Your helpful suggestion here",
+        "content": {{
+            // Step-specific content here
+        }}
+    }}
+
+    For the "Formulate the decision" step, include a refined question and explanation.
+    For the "List options" step, include suggested options with descriptions, pros, and cons.
+    For other steps, provide content relevant to that specific step as before.
     """
     
     try:
         message = client.messages.create(
             model="claude-3-5-sonnet-20240620",
-            max_tokens=300,
+            max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
         )
-        suggestion = message.content[0].text
-        app.logger.info(f"AI suggestion generated for step: {step['title']}")
-    except Exception as e:
-        app.logger.error(f"Error generating AI suggestion for step {step['title']}: {str(e)}")
-        suggestion = "Sorry, I couldn't generate a suggestion at this time. Please try again."
-    
-    return suggestion
+        
+        # Log the full raw response
+        app.logger.info(f"Full raw AI response for step '{step['title']}':\n{message.content[0].text}")
+        
+        # Extract JSON from the response
+        json_match = re.search(r'\{[\s\S]*\}', message.content[0].text)
+        if json_match:
+            json_str = json_match.group(0)
+            cleaned_json_str = clean_json_string(json_str)
+            response = json.loads(cleaned_json_str)
+            app.logger.info(f"Parsed AI response for step '{step['title']}': {json.dumps(response, indent=2)}")
+        else:
+            raise ValueError("No JSON found in the response")
 
-def generate_decision_summary(decision_type, decision_question, user_input):
+        app.logger.info(f"AI suggestion generated successfully for step: {step['title']}")
+    except json.JSONDecodeError as e:
+        app.logger.error(f"Error parsing AI response for step '{step['title']}': {str(e)}")
+        response = {
+            "suggestion": "I apologize, but I couldn't generate a properly formatted suggestion. Please try again.",
+            "content": {}
+        }
+    except Exception as e:
+        app.logger.error(f"Error generating AI suggestion for step '{step['title']}': {str(e)}")
+        response = {
+            "suggestion": "Sorry, I couldn't generate a suggestion at this time. Please try again.",
+            "content": {}
+        }
+    
+    return response
+
+def generate_decision_summary(decision_type, decision_question, user_inputs):
     prompt = f"""
     Decision Type: {decision_type}
     Decision Question: {decision_question}
-    User's Input: {user_input}
+    User's Inputs: {json.dumps(user_inputs, indent=2)}
 
     Please provide a comprehensive summary of the decision-making process and a final recommendation based on the information provided.
     Include:
     1. A restatement of the decision question
     2. Key points considered during the process
-    3. Potential pros and cons of the decision
+    3. Options evaluated and their outcomes
     4. A final recommendation or conclusion
 
     Format the summary in a clear, easy-to-read structure.
