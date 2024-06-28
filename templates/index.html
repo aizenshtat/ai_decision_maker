@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div id="app" class="container">
@@ -40,7 +41,7 @@
                 <p>${currentStep.description}</p>
                 <div class="ai-suggestion">
                     <h3>AI Suggestion:</h3>
-                    <p>${aiSuggestion}</p>
+                    <div v-html="formattedAiSuggestion"></div>
                 </div>
                 <textarea v-model="currentStepInput" :placeholder="'Your thoughts for ' + currentStep.title"></textarea>
                 <button @click="submitStep" :disabled="!currentStepInput || isLoading">
@@ -83,10 +84,17 @@
             <div v-if="savedDecisions.length > 0" class="saved-decisions">
                 <h2>Your Saved Decisions</h2>
                 <ul>
-                    <li v-for="decision in savedDecisions" :key="decision.id">
+                    <li v-for="decision in savedDecisions" :key="decision.id" class="decision-item">
                         <h3>${decision.question}</h3>
-                        <p>Framework: ${decision.framework}</p>
-                        <p>Created: ${new Date(decision.created_at).toLocaleString()}</p>
+                        <p><strong>Framework:</strong> ${decision.framework}</p>
+                        <p><strong>Created:</strong> ${new Date(decision.created_at).toLocaleString()}</p>
+                        <div v-if="decision.feedback" class="decision-feedback">
+                            <p><strong>Your Feedback:</strong> ${decision.feedback.rating}/5 stars</p>
+                            <p v-if="decision.feedback.comment"><em>"${decision.feedback.comment}"</em></p>
+                        </div>
+                        <div v-else class="no-feedback">
+                            <p>No feedback provided</p>
+                        </div>
                         <button @click="showDecisionDetails(decision)">View Details</button>
                     </li>
                 </ul>
@@ -103,16 +111,43 @@
                     <p>${comparisonResult}</p>
                 </div>
             </div>
-    
-            <div v-if="userFeedback.length > 0" class="user-feedback">
-                <h2>Your Feedback</h2>
-                <ul>
-                    <li v-for="feedback in userFeedback" :key="feedback.id">
-                        <p>Rating: ${feedback.rating}/5</p>
-                        <p v-if="feedback.comment">Comment: ${feedback.comment}</p>
-                        <p>Submitted: ${new Date(feedback.created_at).toLocaleString()}</p>
-                    </li>
-                </ul>
+
+            <div v-if="selectedDecision" class="modal">
+                <div class="modal-content">
+                    <span class="close" @click="closeDecisionDetails">&times;</span>
+                    <h2>Decision Details</h2>
+                    <p><strong>Question:</strong> ${selectedDecision.question}</p>
+                    <p><strong>Framework:</strong> ${selectedDecision.framework}</p>
+                    <p><strong>Created:</strong> ${new Date(selectedDecision.created_at).toLocaleString()}</p>
+                    <h3>Response:</h3>
+                    <div v-if="selectedDecision.parsedResponse">
+                        <div v-for="(step, index) in selectedDecision.parsedResponse.steps" :key="index">
+                            <h4>Step ${index + 1}</h4>
+                            <p>${step}</p>
+                        </div>
+                        <h4>Summary</h4>
+                        <p>${selectedDecision.parsedResponse.summary}</p>
+                    </div>
+                    <div v-else>
+                        <p>${selectedDecision.response}</p>
+                    </div>
+                    <div v-if="selectedDecision.feedback">
+                        <h3>Your Feedback</h3>
+                        <p><strong>Rating:</strong> ${selectedDecision.feedback.rating}/5 stars</p>
+                        <p v-if="selectedDecision.feedback.comment"><strong>Comment:</strong> ${selectedDecision.feedback.comment}</p>
+                    </div>
+                    <div v-else>
+                        <h3>Provide Feedback</h3>
+                        <div class="feedback-form">
+                            <p>How helpful was this decision-making process?</p>
+                            <div class="rating">
+                                <span v-for="i in 5" :key="i" @click="setRating(i)" :class="{ 'selected': rating >= i }">☆</span>
+                            </div>
+                            <textarea v-model="feedbackComment" placeholder="Additional comments (optional)"></textarea>
+                            <button @click="submitFeedback(selectedDecision.id)">Submit Feedback</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -145,7 +180,13 @@
             feedbackComment: '',
             feedbackSubmitted: false,
             savedDecisionId: null,
-            isLoading: false            
+            isLoading: false,
+            selectedDecision: null            
+        },
+        computed: {
+            formattedAiSuggestion() {
+                return this.aiSuggestion ? marked.parse(this.aiSuggestion) : '';
+            }
         },
         methods: {
             updateFrameworkInfo() {
@@ -220,7 +261,18 @@
                 });
             },
             showDecisionDetails(decision) {
-                alert(`Question: ${decision.question}\n\nResponse: ${decision.response}`);
+                try {
+                    decision.parsedResponse = JSON.parse(decision.response);
+                } catch (e) {
+                    console.error('Error parsing decision response:', e);
+                    decision.parsedResponse = null;
+                }
+                this.selectedDecision = decision;
+                this.rating = 0;
+                this.feedbackComment = '';
+            },
+            closeDecisionDetails() {
+                this.selectedDecision = null;
             },
             compareDecisions() {
                 if (this.selectedDecisions.length < 2) return;
@@ -259,20 +311,39 @@
                     this.error = 'Error fetching feedback. Please try again.';
                 });
             },
-            submitFeedback() {
-                if (!this.rating || !this.savedDecisionId) return;
+            setRating(value) {
+                this.rating = value;
+            },
+            submitFeedback(decisionId) {
+                if (!this.rating) return;
                 axios.post('/submit_feedback', {
-                    decision_id: this.savedDecisionId,
+                    decision_id: decisionId,
                     rating: this.rating,
                     comment: this.feedbackComment
                 })
                 .then(() => {
-                    this.feedbackSubmitted = true;
-                    this.fetchSavedDecisions();
+                    // Update the decision in the savedDecisions array
+                    const index = this.savedDecisions.findIndex(d => d.id === decisionId);
+                    if (index !== -1) {
+                        this.$set(this.savedDecisions[index], 'feedback', {
+                            rating: this.rating,
+                            comment: this.feedbackComment
+                        });
+                    }
+                    // Update the selectedDecision if it's the one we just added feedback to
+                    if (this.selectedDecision && this.selectedDecision.id === decisionId) {
+                        this.$set(this.selectedDecision, 'feedback', {
+                            rating: this.rating,
+                            comment: this.feedbackComment
+                        });
+                    }
+                    alert('Thank you for your feedback!');
+                    this.rating = 0;
+                    this.feedbackComment = '';
                 })
                 .catch(error => {
                     console.error('Error submitting feedback:', error);
-                    this.error = 'Error submitting feedback. Please try again.';
+                    alert('Error submitting feedback. Please try again.');
                 });
             },
         },
