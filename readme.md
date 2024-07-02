@@ -18,7 +18,7 @@ An AI-powered web application to assist in decision-making processes using the A
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/ai-decision-maker.git
+   git clone https://github.com/aizenshtat/ai_decision_maker.git
    cd ai-decision-maker
    ```
 
