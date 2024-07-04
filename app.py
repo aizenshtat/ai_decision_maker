@@ -1,5 +1,7 @@
-import re
+import os
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 from flask import Flask, render_template, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
@@ -7,10 +9,11 @@ from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
 import anthropic
 from datetime import datetime
-import logging
-from logging.handlers import RotatingFileHandler
-import os
 from dotenv import load_dotenv
+
+# Import the new framework and prompt template
+from decision_framework import PERSONAL_DECISION_FRAMEWORK
+from prompt_template import generate_prompt
 
 load_dotenv()
 
@@ -57,9 +60,10 @@ class Decision(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     question = db.Column(db.String(500), nullable=False)
     framework = db.Column(db.String(50), nullable=False)
-    response = db.Column(db.Text, nullable=False)
+    data = db.Column(json, nullable=False, default={})
+    current_step = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    feedback = db.relationship('Feedback', backref='decision', lazy='dynamic')
+
 
 # Feedback model
 class Feedback(db.Model):
@@ -70,137 +74,142 @@ class Feedback(db.Model):
     comment = db.Column(db.Text)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
-# Decision Frameworks
-DECISION_FRAMEWORKS = {
-    "personal": {
-        "name": "Personal Decision Framework",
-        "steps": [
-            {"title": "Formulate the decision", "description": "Refine the decision question based on AI suggestions."},
-            {"title": "List options", "description": "List and describe possible options, including pros and cons."},
-            {"title": "Define factors", "description": "Define the factors to consider when weighing outcomes."},
-            {"title": "Weigh outcomes", "description": "Evaluate each option based on the defined factors."},
-            {"title": "Make a choice", "description": "Select the final option based on the analysis."}
-        ],
-        "explanation": "Use this framework for personal decisions that affect your life and well-being.",
-        "example": "Choosing a career path or deciding whether to move to a new city."
-    },
-    "business": {
-        "name": "Business Decision Framework",
-        "steps": [
-            {"title": "Define the problem", "description": "Clearly state the business problem or opportunity."},
-            {"title": "Gather information", "description": "Collect relevant data and insights."},
-            {"title": "Identify alternatives", "description": "List possible solutions or courses of action."},
-            {"title": "Evaluate options", "description": "Assess the pros and cons of each alternative."},
-            {"title": "Choose the best option", "description": "Select the most promising solution."},
-            {"title": "Implement and monitor", "description": "Put the decision into action and track its effectiveness."}
-        ],
-        "explanation": "Use this framework for decisions that impact your business or organization.",
-        "example": "Deciding whether to launch a new product line or expand into a new market."
-    },
-    "ethical": {
-        "name": "Ethical Decision Framework",
-        "steps": [
-            {"title": "Identify the ethical issue", "description": "Clearly state the ethical dilemma or question."},
-            {"title": "Gather relevant facts", "description": "Collect all pertinent information about the situation."},
-            {"title": "Consider ethical principles", "description": "Evaluate the situation using ethical theories (e.g., utilitarianism, deontology)."},
-            {"title": "Consult guidelines", "description": "Review any relevant ethical codes or guidelines."},
-            {"title": "Consider alternatives", "description": "Brainstorm possible courses of action."},
-            {"title": "Make and justify decision", "description": "Choose the most ethical option and explain your reasoning."}
-        ],
-        "explanation": "Use this framework when facing moral dilemmas or ethical challenges.",
-        "example": "Deciding whether to report a colleague's misconduct or determining how to allocate limited resources fairly."
-    }
-}
-
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id)) 
+    return db.session.get(User, int(user_id))
 
-def get_decision_framework(decision_type):
-    return DECISION_FRAMEWORKS.get(decision_type, DECISION_FRAMEWORKS["personal"])
-
-def get_ai_decision(prompt, decision_type):
-    try:
-        framework = get_decision_framework(decision_type)
-        suggestions = []
-        
-        for step in framework['steps']:
-            step_prompt = f"For the decision: '{prompt}', provide advice for the step: {step['title']}. {step['description']}"
-            
-            message = client.messages.create(
-                model="claude-3-5-sonnet-20240620",
-                max_tokens=300,
-                messages=[{"role": "user", "content": step_prompt}]
-            )
-            suggestions.append({"step": step['title'], "advice": message.content[0].text})
-        
-        return suggestions
-    except Exception as e:
-        app.logger.error(f"Error in get_ai_decision: {str(e)}", exc_info=True)
-        return f"Sorry, I couldn't make a decision at this time. Error: {str(e)}"
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            user_input = data.get('user_input')
-            decision_type = data.get('decision_type')
-            
-            if not user_input or not decision_type:
-                return jsonify({'error': 'User input and decision type are required'}), 400
-            
-            app.logger.info(f"New decision request - Type: {decision_type}, Input: {user_input[:50]}...")
-            ai_response = get_ai_decision(user_input, decision_type)
-            return jsonify({'decision': ai_response})
-        except Exception as e:
-            app.logger.error(f"Error in index: {str(e)}")
-            return jsonify({'error': 'An error occurred while processing your request'}), 500
     return render_template('index.html')
 
-@app.route('/frameworks', methods=['GET'])
-def get_frameworks():
-    return jsonify(DECISION_FRAMEWORKS)
+@app.route('/api/start_decision', methods=['POST'])
+@login_required
+def start_decision():
+    data = request.json
+    new_decision = Decision(
+        user_id=current_user.id,
+        question=data['question'],
+        framework='personal',
+        data={'initial_question': data['question']},
+        current_step=0
+    )
+    db.session.add(new_decision)
+    db.session.commit()
+    first_step = PERSONAL_DECISION_FRAMEWORK['steps'][0]
+    return jsonify({
+        'decision_id': new_decision.id, 
+        'first_step': first_step
+    }), 200
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            username = data.get('username')
-            password = data.get('password')
-            if not username or not password:
-                return jsonify({'error': 'Username and password are required'}), 400
-            if User.query.filter_by(username=username).first():
-                return jsonify({'error': 'Username already exists'}), 400
-            user = User(username=username)
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
-            return jsonify({'message': 'User registered successfully'}), 201
-        except Exception as e:
-            app.logger.error(f"Error in register: {str(e)}")
-            return jsonify({'error': 'An error occurred during registration'}), 500
-    return render_template('register.html')
+@app.route('/api/get_step', methods=['GET'])
+@login_required
+def get_step():
+    decision_id = request.args.get('decision_id')
+    decision = Decision.query.get(decision_id)
+    if decision.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    step = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]
+    current_context = json.dumps(decision.data, indent=2)
+    
+    ai_prompt = generate_prompt(step, current_context)
+    ai_response = get_ai_suggestion(ai_prompt)
+    
+    return jsonify({
+        'step': step,
+        'ai_suggestion': ai_response['suggestion'],
+        'pre_filled_data': ai_response['pre_filled_data']
+    }), 200
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/api/get_suggestion', methods=['GET'])
+@login_required
+def get_suggestion():
+    decision_id = request.args.get('decision_id')
+    step_index = int(request.args.get('step'))
+    decision = db.session.get(Decision, decision_id)
+    if decision.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    step = PERSONAL_DECISION_FRAMEWORK['steps'][step_index]
+    
+    # Prepare the full context for the AI prompt
+    current_context = {
+        'initial_question': decision.question
+    }
+    
+    # Ensure decision.data is a dictionary
+    if not isinstance(decision.data, dict):
+        decision.data = {}
+    
+    # Include data from all previous steps
+    for i in range(step_index):
+        previous_step = PERSONAL_DECISION_FRAMEWORK['steps'][i]
+        step_data = decision.data.get(previous_step['title'], {})
+        current_context[previous_step['title']] = step_data
+    
+    app.logger.info(f"Decision ID: {decision_id}, Current step: {step_index}")
+    app.logger.info(f"Decision data: {json.dumps(decision.data, indent=2)}")
+    app.logger.info(f"Current context for AI prompt: {json.dumps(current_context, indent=2)}")
+    
+    ai_prompt = generate_prompt(step, current_context)
+    ai_response = get_ai_suggestion(ai_prompt)
+    
+    return jsonify(ai_response), 200
+
+@app.route('/api/submit_step', methods=['POST'])
+@login_required
+def submit_step():
+    data = request.json
+    decision = db.session.get(Decision, data['decision_id'])
+    if decision.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    current_step_title = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]['title']
+    
+    # Ensure decision.data is a dictionary
+    if not isinstance(decision.data, dict):
+        decision.data = {}
+    
+    # Update the decision data with the new step data
+    decision.data[current_step_title] = data['step_data']
+    
+    app.logger.info(f"Updating decision {decision.id}, step: {current_step_title}")
+    app.logger.info(f"New step data: {json.dumps(data['step_data'], indent=2)}")
+    app.logger.info(f"Updated decision data: {json.dumps(decision.data, indent=2)}")
+    
+    try:
+        db.session.commit()
+        app.logger.info(f"Decision {decision.id} updated successfully")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating decision: {str(e)}")
+        return jsonify({'error': 'Error saving decision data'}), 500
+    
+    # Increment the step after saving the data
+    decision.current_step += 1
+    db.session.commit()
+    
+    if decision.current_step >= len(PERSONAL_DECISION_FRAMEWORK['steps']):
+        summary = generate_decision_summary(decision)
+        decision.current_step = -1  # Indicate decision process is complete
+        db.session.commit()
+        return jsonify({'completed': True, 'summary': summary}), 200
+    
+    next_step = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]
+    return jsonify({'completed': False, 'next_step': next_step}), 200
+
+@app.route('/login', methods=['POST'])
 def login():
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            username = data.get('username')
-            password = data.get('password')
-            if not username or not password:
-                return jsonify({'error': 'Username and password are required'}), 400
-            user = User.query.filter_by(username=username).first()
-            if user and user.check_password(password):
-                login_user(user)
-                return jsonify({'message': 'Logged in successfully'}), 200
-            return jsonify({'error': 'Invalid username or password'}), 401
-        except Exception as e:
-            app.logger.error(f"Error in login: {str(e)}")
-            return jsonify({'error': 'An error occurred during login'}), 500
-    return render_template('login.html')
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    if not username or not password:
+        return jsonify({'error': 'Username and password are required'}), 400
+    user = User.query.filter_by(username=username).first()
+    if user and user.check_password(password):
+        login_user(user)
+        return jsonify({'message': 'Logged in successfully'}), 200
+    return jsonify({'error': 'Invalid username or password'}), 401
 
 @app.route('/logout')
 @login_required
@@ -208,21 +217,7 @@ def logout():
     logout_user()
     return jsonify({'message': 'Logged out successfully'}), 200
 
-@app.route('/save_decision', methods=['POST'])
-@login_required
-def save_decision():
-    data = request.json
-    new_decision = Decision(
-        user_id=current_user.id,
-        question=data['question'],
-        framework=data['framework'],
-        response=data['response']
-    )
-    db.session.add(new_decision)
-    db.session.commit()
-    return jsonify({'message': 'Decision saved successfully', 'id': new_decision.id}), 200
-
-@app.route('/get_decisions', methods=['GET'])
+@app.route('/api/get_decisions', methods=['GET'])
 @login_required
 def get_decisions():
     decisions = Decision.query.filter_by(user_id=current_user.id).order_by(Decision.created_at.desc()).all()
@@ -230,37 +225,16 @@ def get_decisions():
         'id': d.id,
         'question': d.question,
         'framework': d.framework,
-        'response': d.response,
         'created_at': d.created_at.isoformat(),
-        'feedback': {
-            'rating': d.feedback.first().rating if d.feedback.first() else None,
-            'comment': d.feedback.first().comment if d.feedback.first() else None
-        } if d.feedback.first() else None
+        'current_step': d.current_step,
+        'data': d.data
     } for d in decisions])
 
-@app.route('/check_login')
+@app.route('/api/check_login')
 def check_login():
     return jsonify({'logged_in': current_user.is_authenticated})
 
-@app.route('/compare_decisions', methods=['POST'])
-@login_required
-def compare_decisions():
-    data = request.json
-    decision_ids = data.get('decision_ids', [])
-    decisions = Decision.query.filter(Decision.id.in_(decision_ids), Decision.user_id == current_user.id).all()
-    
-    comparison = client.messages.create(
-        model="claude-3-5-sonnet-20240620",
-        max_tokens=1000,
-        messages=[{
-            "role": "user", 
-            "content": f"Compare the following decisions:\n\n" + "\n\n".join([f"Decision {i+1}:\nQuestion: {d.question}\nFramework: {d.framework}\nResponse: {d.response}" for i, d in enumerate(decisions)])
-        }]
-    )
-    
-    return jsonify({'comparison': comparison.content[0].text})
-
-@app.route('/submit_feedback', methods=['POST'])
+@app.route('/api/submit_feedback', methods=['POST'])
 @login_required
 def submit_feedback():
     data = request.json
@@ -284,154 +258,58 @@ def submit_feedback():
     app.logger.info(f"Feedback submitted for decision {decision_id}")
     return jsonify({'message': 'Feedback submitted successfully'}), 200
 
-@app.route('/get_feedback', methods=['GET'])
-@login_required
-def get_feedback():
-    feedback = Feedback.query.filter_by(user_id=current_user.id).order_by(Feedback.created_at.desc()).all()
-    return jsonify([{
-        'id': f.id,
-        'rating': f.rating,
-        'comment': f.comment,
-        'created_at': f.created_at.isoformat()
-    } for f in feedback])
-
-@app.route('/get_next_step', methods=['POST'])
-@login_required
-def get_next_step():
+def get_ai_suggestion(prompt):
     try:
-        data = request.json
-        decision_type = data.get('decision_type')
-        current_step = data.get('current_step', 0)
-        decision_question = data.get('decision_question', '')
-        user_inputs = data.get('user_inputs', {})
-
-        app.logger.info(f"Step {current_step + 1} for decision: '{decision_question}' (Type: {decision_type})")
-        app.logger.info(f"User inputs: {user_inputs}")
-
-        framework = get_decision_framework(decision_type)
-        total_steps = len(framework['steps'])
-
-        if current_step >= total_steps:
-            app.logger.info(f"Decision process completed for: '{decision_question}'")
-            return jsonify({
-                'completed': True, 
-                'summary': generate_decision_summary(decision_type, decision_question, user_inputs),
-                'progress': 100
-            })
-
-        next_step = framework['steps'][current_step]
-        ai_suggestion = get_ai_suggestion(decision_type, next_step, decision_question, user_inputs)
-
-        progress = ((current_step + 1) / total_steps) * 100
-
-        response = jsonify({
-            'step': next_step,
-            'ai_suggestion': ai_suggestion,
-            'progress': progress
-        })
-        app.logger.info(f"Sending response for step: {next_step['title']}")
-        app.logger.info(f"AI Suggestion: {ai_suggestion}")
-        return response
-    except Exception as e:
-        app.logger.error(f"Error in get_next_step: {str(e)}")
-        return jsonify({'error': 'An error occurred while processing your request'}), 500
-
-def clean_json_string(json_str):
-    # Remove any control characters
-    json_str = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', json_str)
-    # Replace any single backslashes that aren't already escaped
-    json_str = re.sub(r'(?<!\\)\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', json_str)
-    return json_str
-
-
-def get_ai_suggestion(decision_type, step, decision_question, user_inputs):
-    prompt = f"""
-    Decision Type: {decision_type}
-    Original Decision Question: {decision_question}
-    Current Step: {step['title']}
-    Step Description: {step['description']}
-    User's Previous Inputs: {json.dumps(user_inputs, indent=2)}
-
-    Please provide your response in a valid JSON format with the following structure:
-    {{
-        "suggestion": "Your helpful suggestion here",
-        "content": {{
-            // Step-specific content here
-        }}
-    }}
-
-    For the "Formulate the decision" step, include a refined question and explanation.
-    For the "List options" step, include suggested options with descriptions, pros, and cons.
-    For other steps, provide content relevant to that specific step as before.
-    """
-    
-    try:
-        message = client.messages.create(
+        app.logger.info(f"Sending prompt to AI: {prompt}")
+        response = client.messages.create(
             model="claude-3-5-sonnet-20240620",
-            max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}]
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
-        
-        # Log the full raw response
-        app.logger.info(f"Full raw AI response for step '{step['title']}':\n{message.content[0].text}")
-        
-        # Extract JSON from the response
-        json_match = re.search(r'\{[\s\S]*\}', message.content[0].text)
-        if json_match:
-            json_str = json_match.group(0)
-            cleaned_json_str = clean_json_string(json_str)
-            response = json.loads(cleaned_json_str)
-            app.logger.info(f"Parsed AI response for step '{step['title']}': {json.dumps(response, indent=2)}")
-        else:
-            raise ValueError("No JSON found in the response")
-
-        app.logger.info(f"AI suggestion generated successfully for step: {step['title']}")
-    except json.JSONDecodeError as e:
-        app.logger.error(f"Error parsing AI response for step '{step['title']}': {str(e)}")
-        response = {
-            "suggestion": "I apologize, but I couldn't generate a properly formatted suggestion. Please try again.",
-            "content": {}
-        }
+        app.logger.info(f"Received AI response: {response.content[0].text}")
+        return json.loads(response.content[0].text)
+    except json.JSONDecodeError:
+        app.logger.error(f"Error decoding JSON from AI response: {response.content[0].text}")
+        return {"suggestion": "Error parsing AI suggestion", "pre_filled_data": {}}
     except Exception as e:
-        app.logger.error(f"Error generating AI suggestion for step '{step['title']}': {str(e)}")
-        response = {
-            "suggestion": "Sorry, I couldn't generate a suggestion at this time. Please try again.",
-            "content": {}
-        }
-    
-    return response
+        app.logger.error(f"Error in get_ai_suggestion: {str(e)}", exc_info=True)
+        return {"suggestion": "Error generating AI suggestion", "pre_filled_data": {}}
 
-def generate_decision_summary(decision_type, decision_question, user_inputs):
+def generate_decision_summary(decision):
     prompt = f"""
-    Decision Type: {decision_type}
-    Decision Question: {decision_question}
-    User's Inputs: {json.dumps(user_inputs, indent=2)}
-
-    Please provide a comprehensive summary of the decision-making process and a final recommendation based on the information provided.
-    Include:
+    Please provide a comprehensive summary of the decision-making process for the following decision:
+    
+    Decision Question: {decision.question}
+    
+    Step-by-step data:
+    {json.dumps(decision.data, indent=2)}
+    
+    Please structure your summary in markdown format, including:
     1. A restatement of the decision question
     2. Key points considered during the process
     3. Options evaluated and their outcomes
-    4. A final recommendation or conclusion
-
-    Format the summary in a clear, easy-to-read structure.
+    4. The final decision or recommendation
     """
     
-    app.logger.info(f"Generating decision summary for: '{decision_question}'")
-    
     try:
-        message = client.messages.create(
+        response = client.messages.create(
             model="claude-3-5-sonnet-20240620",
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
+            max_tokens=2048,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
-        summary = message.content[0].text
-        app.logger.info("Decision summary generated successfully")
+        return response.content[0].text
     except Exception as e:
-        app.logger.error(f"Error generating decision summary: {str(e)}")
-        summary = "Sorry, I couldn't generate a summary at this time. Please try again."
-    
-    return summary
+        app.logger.error(f"Error generating decision summary: {str(e)}", exc_info=True)
+        return "Error generating decision summary"
+
+def __init__(self, **kwargs):
+        super(Decision, self).__init__(**kwargs)
+        if self.data is None:
+            self.data = {}
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -442,3 +320,5 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
+    

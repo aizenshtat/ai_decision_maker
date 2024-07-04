@@ -165,9 +165,9 @@ button + button {
     border-radius: 4px;
 }
 
-.ai-suggestion h4 {
-    color: #3498db;
-    margin-top: 1rem;
+.ai-suggestion {
+    background-color: #e8f5e9;
+    border-left: 5px solid #4caf50;
 }
 
 .ai-suggestion ul {
@@ -325,6 +325,16 @@ input[type="range"]::-moz-range-thumb {
     border-radius: 5px;
     padding: 20px;
     margin-top: 20px;
+}
+
+.decision-summary pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 1rem;
+    font-size: 0.9rem;
 }
 
 /* Saved decisions */
@@ -555,4 +565,98 @@ input[type="range"]::-moz-range-thumb {
     button, .progress-container {
         display: none;
     }
+
+    /* Styles for dynamic form fields */
+    .field-container {
+        margin-bottom: 1rem;
+    }
+
+    .field-container label {
+        display: block;
+        margin-bottom: 0.5rem;
+    }
+
+    .field-container input[type="text"],
+    .field-container textarea {
+        width: 100%;
+        padding: 0.8rem;
+        border: 1px solid #bdc3c7;
+        border-radius: 4px;
+        font-size: 1rem;
+    }
+
+    .list-field-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+
+    .list-field-item input {
+        flex-grow: 1;
+        margin-right: 0.5rem;
+    }
+
+    .list-field-item button {
+        padding: 0.5rem;
+        background-color: #e74c3c;
+    }
+
+    .list-field-item button:hover {
+        background-color: #c0392b;
+    }
+
+    /* Login and Register forms */
+    .auth-form {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        max-width: 400px;
+        margin: 2rem auto;
+    }
+
+    .auth-form h2 {
+        text-align: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .auth-form input {
+        margin-bottom: 1rem;
+    }
+
+    .auth-form button {
+        width: 100%;
+    }
+
+    .auth-links {
+        text-align: center;
+        margin-top: 1rem;
+    }
+
+    .auth-links a {
+        color: #3498db;
+        text-decoration: none;
+    }
+
+    .auth-links a:hover {
+        text-decoration: underline;
+    }
+
+    .field-container input:disabled,
+    .field-container textarea:disabled,
+    .field-container button:disabled {
+        background-color: #f0f0f0;
+        cursor: not-allowed;
+    }
+
+    .ai-processing {
+        margin-top: 1rem;
+        padding: 0.5rem;
+        background-color: #e0f7fa;
+        border: 1px solid #80deea;
+        border-radius: 4px;
+        text-align: center;
+        font-style: italic;
+    }
+
 }

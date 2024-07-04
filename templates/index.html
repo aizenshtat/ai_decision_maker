@@ -14,24 +14,13 @@
     <div id="app" class="container">
         <h1>AI Decision Maker</h1>
         <div v-if="!isLoggedIn">
-            <p>Please <a href="/login">login</a> or <a href="/register">register</a> to use the AI Decision Maker.</p>
+            <p>Please <a href="#" @click="showLoginForm">login</a> or <a href="#" @click="showRegisterForm">register</a> to use the AI Decision Maker.</p>
         </div>
         <div v-else>
             <div v-if="!decisionStarted">
                 <h2>Start a New Decision</h2>
                 <label for="decision-question">What decision do you need help with?</label>
                 <textarea id="decision-question" v-model="decisionQuestion" required></textarea>
-                
-                <label for="decision-type">Type of Decision:</label>
-                <select id="decision-type" v-model="decisionType" @change="updateFrameworkInfo">
-                    <option v-for="(framework, key) in frameworks" :value="key">${framework.name}</option>
-                </select>
-                
-                <div v-if="selectedFramework">
-                    <h3>About this framework:</h3>
-                    <p><strong>When to use:</strong> ${selectedFramework.explanation}</p>
-                    <p><strong>Example:</strong> ${selectedFramework.example}</p>
-                </div>
                 
                 <button @click="startDecision" :disabled="!decisionQuestion || isLoading">
                     ${isLoading ? 'Processing...' : 'Start Decision Process'}
@@ -41,59 +30,47 @@
             <div v-else-if="!decisionCompleted">
                 <h2>${currentStep.title}</h2>
                 <p>${currentStep.description}</p>
-                <div v-if="aiSuggestion" class="ai-suggestion">
-                    <h3>AI Suggestion:</h3>
-                    <div v-html="formattedAiSuggestion"></div>
-                </div>
-                <div class="step-input" v-if="currentStep.title === 'Formulate the decision'">
-                    <label for="refined-decision">Refined Decision:</label>
-                    <textarea
-                        id="refined-decision"
-                        v-model="stepInputs.formulatedDecision"
-                        rows="3"
-                        class="form-control"
-                    ></textarea>
-                </div>
-                <div class="step-input" v-else-if="currentStep.title === 'List options'">
-                    <div v-for="(option, index) in stepInputs.options" :key="index" class="option-item">
-                        <input v-model="option.name" :placeholder="'Option ' + (index + 1)">
-                        <textarea v-model="option.description" placeholder="Description"></textarea>
-                        <textarea v-model="option.pros" placeholder="Pros"></textarea>
-                        <textarea v-model="option.cons" placeholder="Cons"></textarea>
-
-                        <button @click="removeOption(index)" v-if="stepInputs.options.length > 1">Remove</button>
-                    </div>
-                    <button @click="addOption">Add Option</button>
-                </div>
-                <div class="step-input" v-else-if="currentStep.title === 'Define factors'">
-                    <div v-for="(factor, index) in stepInputs.factors" :key="index">
-                        <input v-model="factor.name" :placeholder="'Factor ' + (index + 1)">
-                        <button @click="removeFactor(index)" v-if="stepInputs.factors.length > 1">Remove</button>
-                    </div>
-                    <button @click="addFactor">Add Factor</button>
-                </div>
-                <div class="step-input" v-else-if="currentStep.title === 'Weigh outcomes'">
-                    <div v-for="(option, optionIndex) in stepInputs.options" :key="'option-' + optionIndex">
-                        <h4>${option.name}</h4>
-                        <div v-for="(factor, factorIndex) in stepInputs.factors" :key="'factor-' + factorIndex">
-                            <label>${factor.name}</label>
-                            <input type="range" v-model="stepInputs.weights[optionIndex][factorIndex]" min="1" max="10">
-                            <span>${stepInputs.weights[optionIndex][factorIndex]}</span>
+                <form @submit.prevent="submitStep">
+                    <div v-for="field in currentStep.fields" :key="field.name" class="field-container">
+                        <label :for="field.name">${field.label}</label>
+                        <div v-if="field.type === 'text'">
+                            <input :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" type="text" :disabled="isAIProcessing">
+                        </div>
+                        <div v-else-if="field.type === 'textarea'">
+                            <textarea :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" :disabled="isAIProcessing"></textarea>
+                        </div>
+                        <div v-else-if="field.type === 'list'">
+                            <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-field-item">
+                                <input v-model="stepInputs[field.name][index]" type="text" :disabled="isAIProcessing">
+                                <button @click.prevent="removeListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
+                            </div>
+                            <button @click.prevent="addListItem(field.name)" type="button" :disabled="isAIProcessing">Add Item</button>
+                        </div>
+                        <div v-else-if="field.type === 'list_of_objects'">
+                            <div v-for="(item, index) in stepInputs[field.name]" :key="index">
+                                <div v-for="(value, key) in item" :key="key" :disabled="isAIProcessing">
+                                    <label>${key}</label>
+                                    <input v-model="item[key]">
+                                </div>
+                                <button @click="removeObjectListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
+                            </div>
+                            <button @click.prevent="addObjectListItem(field.name, field.object_structure)" type="button" :disabled="isAIProcessing">Add Item</button>
                         </div>
                     </div>
+
+                    <div class="navigation-buttons">
+                        <button type="button" @click="previousStep" v-if="currentStepIndex > 0" :disabled="isAIProcessing">Previous Step</button>
+                        <button type="submit" :disabled="!isStepValid || isLoading || isAIProcessing">
+                            ${isLoading ? 'Processing...' : 'Next Step'}
+                        </button>
+                    </div>
+                </form>
+                <div v-if="isAIProcessing" class="ai-processing">
+                    AI is processing your input...
                 </div>
-                <div class="step-input" v-else-if="currentStep.title === 'Make a choice'">
-                    <select v-model="stepInputs.finalChoice">
-                        <option v-for="option in stepInputs.options" :value="option.name">${option.name}</option>
-                    </select>
-                    <textarea v-model="stepInputs.reasoning" placeholder="Reasoning for your choice"></textarea>
-                </div>
-                <div class="navigation-buttons">
-                    <button @click="previousStep" v-if="currentStepIndex > 0">Previous Step</button>
-                    <button @click="submitStep" :disabled="!isStepValid || isLoading">
-                        ${isLoading ? 'Processing...' : 'Next Step'}
-                    </button>
-                    <button @click="startOver">Start Over</button>
+                <div v-if="aiSuggestion" class="ai-suggestion">
+                    <h3>AI Suggestion:</h3>
+                    <div v-html="parseMarkdown(aiSuggestion)"></div>
                 </div>
                 <div class="progress-container">
                     <div class="progress-bar" :style="{ width: progress + '%' }"></div>
@@ -103,9 +80,7 @@
     
             <div v-else>
                 <h2>Decision Summary</h2>
-                <div class="decision-summary">
-                    <p>${decisionSummary}</p>
-                </div>
+                <div class="decision-summary" v-html="marked.parse(decisionSummary)"></div>
                 <button @click="saveDecision" :disabled="decisionSaved">
                     ${decisionSaved ? 'Decision Saved' : 'Save Decision'}
                 </button>
@@ -136,28 +111,9 @@
                         <h3>${decision.question}</h3>
                         <p><strong>Framework:</strong> ${decision.framework}</p>
                         <p><strong>Created:</strong> ${new Date(decision.created_at).toLocaleString()}</p>
-                        <div v-if="decision.feedback" class="decision-feedback">
-                            <p><strong>Your Feedback:</strong> ${decision.feedback.rating}/5 stars</p>
-                            <p v-if="decision.feedback.comment"><em>"${decision.feedback.comment}"</em></p>
-                        </div>
-                        <div v-else class="no-feedback">
-                            <p>No feedback provided</p>
-                        </div>
                         <button @click="showDecisionDetails(decision)">View Details</button>
                     </li>
                 </ul>
-            </div>
-    
-            <div v-if="savedDecisions.length > 1" class="decision-comparison">
-                <h2>Compare Decisions</h2>
-                <select v-model="selectedDecisions" multiple>
-                    <option v-for="decision in savedDecisions" :value="decision.id">${decision.question}</option>
-                </select>
-                <button @click="compareDecisions" :disabled="selectedDecisions.length < 2">Compare Selected Decisions</button>
-                <div v-if="comparisonResult">
-                    <h3>Comparison Result:</h3>
-                    <p>${comparisonResult}</p>
-                </div>
             </div>
 
             <div v-if="selectedDecision" class="modal">
@@ -167,24 +123,12 @@
                     <p><strong>Question:</strong> ${selectedDecision.question}</p>
                     <p><strong>Framework:</strong> ${selectedDecision.framework}</p>
                     <p><strong>Created:</strong> ${new Date(selectedDecision.created_at).toLocaleString()}</p>
-                    <h3>Response:</h3>
-                    <div v-if="selectedDecision.parsedResponse">
-                        <div v-for="(step, index) in selectedDecision.parsedResponse.steps" :key="index">
-                            <h4>Step ${index + 1}</h4>
-                            <p>${step}</p>
-                        </div>
-                        <h4>Summary</h4>
-                        <p>${selectedDecision.parsedResponse.summary}</p>
+                    <h3>Steps:</h3>
+                    <div v-for="(stepData, stepTitle) in selectedDecision.data" :key="stepTitle">
+                        <h4>${stepTitle}</h4>
+                        <pre>${JSON.stringify(stepData, null, 2)}</pre>
                     </div>
-                    <div v-else>
-                        <p>${selectedDecision.response}</p>
-                    </div>
-                    <div v-if="selectedDecision.feedback">
-                        <h3>Your Feedback</h3>
-                        <p><strong>Rating:</strong> ${selectedDecision.feedback.rating}/5 stars</p>
-                        <p v-if="selectedDecision.feedback.comment"><strong>Comment:</strong> ${selectedDecision.feedback.comment}</p>
-                    </div>
-                    <div v-else>
+                    <div v-if="!selectedDecision.feedback">
                         <h3>Provide Feedback</h3>
                         <div class="feedback-form">
                             <p>How helpful was this decision-making process?</p>
@@ -207,150 +151,105 @@
         data: {
             isLoggedIn: false,
             decisionQuestion: '',
-            decisionType: 'personal',
-            frameworks: {},
-            selectedFramework: null,
             decisionStarted: false,
-            currentStep: {},
-            currentStepInput: '',
-            aiSuggestion: {
-                content: {
-                    refinedDecision: '',
-                    alternatives: [],
-                    considerations: ''
-                }
-            },
+            currentStep: null,
+            currentStepIndex: 0,
+            aiSuggestion: null,
             progress: 0,
             decisionCompleted: false,
             decisionSummary: '',
-            allStepInputs: [],
             error: '',
             savedDecisions: [],
-            userFeedback: [],
-            selectedDecisions: [],
-            comparisonResult: null,
             decisionSaved: false,
             rating: 0,
             feedbackComment: '',
             feedbackSubmitted: false,
-            savedDecisionId: null,
             isLoading: false,
             selectedDecision: null,
-            stepInputs: {
-                formulatedDecision: '',
-                options: [],
-                factors: [],
-                weights: {},
-                finalChoice: '',
-                reasoning: ''
-            },
-            currentStepIndex: 0
+            stepInputs: {},
+            decisionId: null,
+            isAIProcessing: false
         },
         computed: {
-            formattedAiSuggestion() {
-                if (!this.aiSuggestion) return '';
-                let formatted = `<div class="preserve-newlines">${marked.parse(this.aiSuggestion.suggestion)}</div>`;
-                
-                switch (this.currentStep.title) {
-                    case 'Formulate the decision':
-                        formatted += `<h4>Refined Decision:</h4><div class="preserve-newlines">${this.aiSuggestion.content.refinedDecision}</div>`;
-                        formatted += '<h4>Alternative Formulations:</h4><ul>';
-                        this.aiSuggestion.content.alternatives.forEach(alt => {
-                            formatted += `<li class="preserve-newlines">${alt}</li>`;
-                        });
-                        formatted += '</ul>';
-                        formatted += `<h4>Explanation:</h4><div class="preserve-newlines">${this.aiSuggestion.content.explanation}</div>`;
-                        break;
-                    case 'List options':
-                        formatted += '<h4>Suggested Options:</h4>';
-                        this.aiSuggestion.content.options.forEach(option => {
-                            formatted += `<p><strong>${option.name}:</strong> <span class="preserve-newlines">${option.description}</span></p>`;
-                        });
-                        break;
-                    case 'Define factors':
-                        formatted += '<h4>Suggested Factors:</h4>';
-                        this.aiSuggestion.content.factors.forEach(factor => {
-                            formatted += `<p><strong>${factor.name}:</strong> <span class="preserve-newlines">${factor.explanation}</span></p>`;
-                        });
-                        break;
-                    case 'Weigh outcomes':
-                        formatted += `<h4>How to Weigh Outcomes:</h4><div class="preserve-newlines">${this.aiSuggestion.content.explanation}</div>`;
-                        break;
-                    case 'Make a choice':
-                        formatted += `<h4>Analysis:</h4><div class="preserve-newlines">${this.aiSuggestion.content.analysis}</div>`;
-                        formatted += `<h4>Top Recommendation:</h4><div class="preserve-newlines">${this.aiSuggestion.content.topRecommendation}</div>`;
-                        break;
-                }
-                
-                return formatted;
-            },
             isStepValid() {
-                switch (this.currentStep.title) {
-                    case 'Formulate the decision':
-                        return this.stepInputs.formulatedDecision !== '';
-                    case 'List options':
-                        return this.stepInputs.options.length > 0 && this.stepInputs.options.every(option => option.name.trim() !== '');
-                    case 'Define factors':
-                        return this.stepInputs.factors.length > 0 && this.stepInputs.factors.every(factor => factor.name.trim() !== '');
-                    case 'Weigh outcomes':
-                        return Object.keys(this.stepInputs.weights).length === this.stepInputs.options.length;
-                    case 'Make a choice':
-                        return this.stepInputs.finalChoice !== '' && this.stepInputs.reasoning.trim() !== '';
-                    default:
-                        return true;
-                }
+                if (!this.currentStep || !this.currentStep.fields) return false;
+                return this.currentStep.fields.every(field => {
+                    const value = this.stepInputs[field.name];
+                    if (field.type === 'list' || field.type === 'list_of_objects') {
+                        return Array.isArray(value) && value.length > 0;
+                    }
+                    return value !== undefined && value !== '';
+                });
             }
         },
         methods: {
-            updateFrameworkInfo() {
-                this.selectedFramework = this.frameworks[this.decisionType];
+            parseMarkdown(content) {
+                return marked.parse(content);
+            },
+            showLoginForm() {
+                // Implement login form display logic
+            },
+            showRegisterForm() {
+                // Implement register form display logic
             },
             startDecision() {
-                if (this.isLoading) return;
+                console.log('Starting decision process...');
                 this.isLoading = true;
-                this.decisionStarted = true;
-                this.getNextStep();
+                axios.post('/api/start_decision', {
+                    question: this.decisionQuestion,
+                    framework: 'personal'
+                })
+                .then(response => {
+                    console.log('Decision started:', response.data);
+                    this.decisionId = response.data.decision_id;
+                    this.decisionStarted = true;
+                    this.currentStep = response.data.first_step;
+                    this.initializeStepInputs();
+                    this.getAISuggestion();
+                })
+                .catch(error => {
+                    console.error('Error starting decision:', error);
+                    this.error = 'Error starting decision. Please try again.';
+                })
+                .finally(() => {
+                    this.isLoading = false;
+                });
             },
-            addOption() {
-                this.stepInputs.options.push({ name: '', description: '', pros: '', cons: '' });
+            getAISuggestion() {
+                this.isAIProcessing = true;
+                axios.get(`/api/get_suggestion?decision_id=${this.decisionId}&step=${this.currentStepIndex}`)
+                .then(response => {
+                    console.log('AI suggestion received:', response.data);
+                    this.aiSuggestion = response.data.suggestion;
+                    this.updateStepInputs(response.data.pre_filled_data);
+                })
+                .catch(error => {
+                    console.error('Error getting AI suggestion:', error);
+                    this.error = 'Error getting AI suggestion. Please try again.';
+                })
+                .finally(() => {
+                    this.isAIProcessing = false;
+                });
             },
-            removeOption(index) {
-                this.stepInputs.options.splice(index, 1);
-            },
-            addFactor() {
-                this.stepInputs.factors.push({ name: '' });
-            },
-            removeFactor(index) {
-                this.stepInputs.factors.splice(index, 1);
-            },
-            submitStep() {
-                if (this.isLoading) return;
-                this.isLoading = true;
-                console.log('Submitting step:', this.currentStep.title);
-                this.getNextStep();
+            updateStepInputs(preFillData) {
+                for (const [key, value] of Object.entries(preFillData)) {
+                    if (this.stepInputs.hasOwnProperty(key)) {
+                        this.$set(this.stepInputs, key, value);
+                    }
+                }
             },
             getNextStep() {
                 console.log('Getting next step...');
-                axios.post('/get_next_step', {
-                    decision_type: this.decisionType,
-                    current_step: this.currentStepIndex,
-                    decision_question: this.stepInputs.formulatedDecision || this.decisionQuestion,
-                    user_inputs: this.stepInputs
-                })
+                this.isLoading = true;
+                axios.get(`/api/get_step?decision_id=${this.decisionId}`)
                 .then(response => {
-                    console.log('Received response:', response.data);
-                    if (response.data.completed) {
-                        this.decisionCompleted = true;
-                        this.decisionSummary = response.data.summary;
-                        this.progress = 100;
-                    } else {
-                        this.currentStep = response.data.step;
-                        this.aiSuggestion = response.data.ai_suggestion;
-                        this.progress = response.data.progress;
-                        this.currentStepIndex++;
-                        console.log('Initializing step inputs for:', this.currentStep.title);
-                        this.initializeStepInputs();
-                    }
+                    console.log('Next step received:', response.data);
+                    this.currentStep = response.data.step;
+                    this.aiSuggestion = response.data.ai_suggestion;
+                    this.stepInputs = response.data.pre_filled_data || {};
+                    this.initializeStepInputs();
+                    this.progress = ((this.currentStepIndex + 1) / 9) * 100;  // Assuming 9 steps in total
+                    this.currentStepIndex++;
                 })
                 .catch(error => {
                     console.error('Error getting next step:', error);
@@ -358,88 +257,87 @@
                 })
                 .finally(() => {
                     this.isLoading = false;
-                    console.log('Step processing completed');
+                });
+            },
+            submitStep() {
+                console.log('Submitting step:', this.stepInputs);
+                this.isLoading = true;
+                axios.post('/api/submit_step', {
+                    decision_id: this.decisionId,
+                    step_data: this.stepInputs
+                })
+                .then(response => {
+                    console.log('Step submitted:', response.data);
+                    if (response.data.completed) {
+                        this.decisionCompleted = true;
+                        this.decisionSummary = response.data.summary;
+                    } else {
+                        this.currentStep = response.data.next_step;
+                        this.currentStepIndex++;
+                        this.initializeStepInputs();
+                        this.getAISuggestion();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error submitting step:', error);
+                    this.error = 'Error submitting step. Please try again.';
+                })
+                .finally(() => {
+                    this.isLoading = false;
                 });
             },
             initializeStepInputs() {
-                console.log('Initializing step inputs:', this.currentStep.title);
-                console.log('AI Suggestion:', this.aiSuggestion);
-                switch (this.currentStep.title) {
-                    case 'Formulate the decision':
-                        if (this.aiSuggestion && this.aiSuggestion.content) {
-                            this.stepInputs.formulatedDecision = this.aiSuggestion.content.refinedQuestion || 
-                                                                this.aiSuggestion.content.refinedDecision || 
-                                                                this.decisionQuestion;
-                        } else {
-                            this.stepInputs.formulatedDecision = this.decisionQuestion;
-                        }
-                        break;
-                    case 'List options':
-                        this.stepInputs.options = this.aiSuggestion.content.options || [{ name: '', description: '', pros: '', cons: '' }];
-                        break;
-                    case 'Define factors':
-                        this.stepInputs.factors = this.aiSuggestion.content.factors || [{ name: '' }];
-                        break;
-                    case 'Weigh outcomes':
-                        console.log('Options:', this.stepInputs.options);
-                        console.log('Factors:', this.stepInputs.factors);
-                        this.stepInputs.weights = {};
-                        this.stepInputs.options.forEach((option, optionIndex) => {
-                            this.stepInputs.weights[optionIndex] = {};
-                            this.stepInputs.factors.forEach((factor, factorIndex) => {
-                                this.stepInputs.weights[optionIndex][factorIndex] = 5; // Middle value on 1-10 scale
-                            });
-                        });
-                        console.log('Initialized weights:', this.stepInputs.weights);
-                        break;
-                    case 'Make a choice':
-                        this.stepInputs.finalChoice = this.aiSuggestion.content.optimalChoice || '';
-                        this.stepInputs.reasoning = this.aiSuggestion.content.reasoning || '';
-                        break;
+                console.log('Initializing step inputs:', this.currentStep);
+                if (!this.currentStep.fields) {
+                    console.error('No fields found in current step');
+                    return;
                 }
+                this.currentStep.fields.forEach(field => {
+                    if (!this.stepInputs.hasOwnProperty(field.name)) {
+                        if (field.type === 'list' || field.type === 'list_of_objects') {
+                            this.$set(this.stepInputs, field.name, []);
+                        } else {
+                            this.$set(this.stepInputs, field.name, '');
+                        }
+                    }
+                });
+                console.log('Initialized step inputs:', this.stepInputs);
+            },
+            addListItem(fieldName) {
+                if (!Array.isArray(this.stepInputs[fieldName])) {
+                    this.$set(this.stepInputs, fieldName, []);
+                }
+                this.stepInputs[fieldName].push('');
+            },
+            removeListItem(fieldName, index) {
+                this.stepInputs[fieldName].splice(index, 1);
+            },
+            addObjectListItem(fieldName, structure) {
+                const newItem = {};
+                Object.keys(structure).forEach(key => {
+                    newItem[key] = '';
+                });
+                this.stepInputs[fieldName].push(newItem);
+            },
+            removeObjectListItem(fieldName, index) {
+                this.stepInputs[fieldName].splice(index, 1);
             },
             previousStep() {
-                if (this.currentStepIndex > 0) {
-                    this.currentStepIndex--;
-                    this.currentStep = this.frameworks[this.decisionType].steps[this.currentStepIndex];
-                    this.progress = (this.currentStepIndex / (this.frameworks[this.decisionType].steps.length - 1)) * 100;
+                if (this.currentStepIndex > 1) {
+                    this.currentStepIndex -= 2;
+                    this.getNextStep();
                 }
             },
-            startOver() {
-                this.decisionStarted = false;
-                this.decisionCompleted = false;
-                this.currentStepIndex = 0;
-                this.stepInputs = {
-                    formulatedDecision: '',
-                    options: [],
-                    factors: [],
-                    weights: {},
-                    finalChoice: '',
-                    reasoning: ''
-                };
-                this.progress = 0;
+            generateSummary() {
+                // Implement summary generation logic
+                this.decisionSummary = "Your decision process is complete. Here's a summary of your decision...";
             },
             saveDecision() {
-                axios.post('/save_decision', {
-                    question: this.decisionQuestion,
-                    framework: this.decisionType,
-                    response: JSON.stringify({
-                        steps: this.allStepInputs,
-                        summary: this.decisionSummary
-                    })
-                })
-                .then(response => {
-                    this.decisionSaved = true;
-                    this.savedDecisionId = response.data.id;
-                    this.fetchSavedDecisions();
-                })
-                .catch(error => {
-                    console.error('Error saving decision:', error);
-                    this.error = 'Error saving decision. Please try again.';
-                });
+                // This method is no longer needed as decisions are saved automatically
+                this.decisionSaved = true;
             },
             fetchSavedDecisions() {
-                axios.get('/get_decisions')
+                axios.get('/api/get_decisions')
                 .then(response => {
                     this.savedDecisions = response.data;
                 })
@@ -449,102 +347,47 @@
                 });
             },
             showDecisionDetails(decision) {
-                try {
-                    decision.parsedResponse = JSON.parse(decision.response);
-                } catch (e) {
-                    console.error('Error parsing decision response:', e);
-                    decision.parsedResponse = null;
-                }
                 this.selectedDecision = decision;
-                this.rating = 0;
-                this.feedbackComment = '';
             },
             closeDecisionDetails() {
                 this.selectedDecision = null;
-            },
-            compareDecisions() {
-                if (this.selectedDecisions.length < 2) return;
-                axios.post('/compare_decisions', {
-                    decision_ids: this.selectedDecisions
-                })
-                .then(response => {
-                    this.comparisonResult = response.data.comparison;
-                })
-                .catch(error => {
-                    console.error('Error comparing decisions:', error);
-                    this.error = 'Error comparing decisions. Please try again.';
-                });
-            },
-            checkLoginStatus() {
-                axios.get('/check_login')
-                .then(response => {
-                    this.isLoggedIn = response.data.logged_in;
-                    if (this.isLoggedIn) {
-                        this.fetchSavedDecisions();
-                        this.fetchFeedback();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error checking login status:', error);
-                    this.error = 'Error checking login status. Please try refreshing the page.';
-                });
-            },
-            fetchFeedback() {
-                axios.get('/get_feedback')
-                .then(response => {
-                    this.userFeedback = response.data;
-                })
-                .catch(error => {
-                    console.error('Error fetching feedback:', error);
-                    this.error = 'Error fetching feedback. Please try again.';
-                });
             },
             setRating(value) {
                 this.rating = value;
             },
             submitFeedback(decisionId) {
                 if (!this.rating) return;
-                axios.post('/submit_feedback', {
+                axios.post('/api/submit_feedback', {
                     decision_id: decisionId,
                     rating: this.rating,
                     comment: this.feedbackComment
                 })
                 .then(() => {
-                    // Update the decision in the savedDecisions array
-                    const index = this.savedDecisions.findIndex(d => d.id === decisionId);
-                    if (index !== -1) {
-                        this.$set(this.savedDecisions[index], 'feedback', {
-                            rating: this.rating,
-                            comment: this.feedbackComment
-                        });
-                    }
-                    // Update the selectedDecision if it's the one we just added feedback to
-                    if (this.selectedDecision && this.selectedDecision.id === decisionId) {
-                        this.$set(this.selectedDecision, 'feedback', {
-                            rating: this.rating,
-                            comment: this.feedbackComment
-                        });
-                    }
                     alert('Thank you for your feedback!');
                     this.rating = 0;
                     this.feedbackComment = '';
+                    this.fetchSavedDecisions();  // Refresh the decisions list
                 })
                 .catch(error => {
                     console.error('Error submitting feedback:', error);
                     alert('Error submitting feedback. Please try again.');
                 });
             },
-        },
-        mounted() {
-            axios.get('/frameworks')
+            checkLoginStatus() {
+                axios.get('/api/check_login')
                 .then(response => {
-                    this.frameworks = response.data;
-                    this.updateFrameworkInfo();
+                    this.isLoggedIn = response.data.logged_in;
+                    if (this.isLoggedIn) {
+                        this.fetchSavedDecisions();
+                    }
                 })
                 .catch(error => {
-                    console.error('Error fetching frameworks:', error);
-                    this.error = 'Error fetching decision frameworks. Please try refreshing the page.';
+                    console.error('Error checking login status:', error);
+                    this.error = 'Error checking login status. Please refresh the page.';
                 });
+            },
+        },
+        mounted() {
             this.checkLoginStatus();
         }
     });
