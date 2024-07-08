@@ -382,6 +382,24 @@ input[type="range"]::-moz-range-thumb {
     margin-top: 10px;  /* Add space above the button */
 }
 
+.decision-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.decision-actions button {
+    margin-right: 10px;
+}
+
+.delete-btn {
+    background-color: #e74c3c;
+}
+
+.delete-btn:hover {
+    background-color: #c0392b;
+}
+
 /* Modal styles */
 .modal {
     display: block;

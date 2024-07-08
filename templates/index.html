@@ -105,13 +105,19 @@
             </div>
     
             <div v-if="savedDecisions.length > 0" class="saved-decisions">
-                <h2>Your Saved Decisions</h2>
+                <h2>Your Decisions</h2>
                 <ul>
                     <li v-for="decision in savedDecisions" :key="decision.id" class="decision-item">
                         <h3>${decision.question}</h3>
                         <p><strong>Framework:</strong> ${decision.framework}</p>
                         <p><strong>Created:</strong> ${new Date(decision.created_at).toLocaleString()}</p>
-                        <button @click="showDecisionDetails(decision)">View Details</button>
+                        <p><strong>Status:</strong> ${decision.status === 'completed' ? 'Completed' : 'In Progress'}</p>
+                        <p v-if="decision.status !== 'completed'"><strong>Progress:</strong> Step ${decision.current_step + 1} of ${decision.total_steps}</p>
+                        <div class="decision-actions">
+                            <button v-if="decision.status !== 'completed'" @click="resumeDecision(decision.id)">Resume</button>
+                            <button @click="showDecisionDetails(decision)">View Details</button>
+                            <button @click="deleteDecision(decision.id)" class="delete-btn">Delete</button>
+                        </div>
                     </li>
                 </ul>
             </div>
@@ -343,10 +349,6 @@
                 // Implement summary generation logic
                 this.decisionSummary = "Your decision process is complete. Here's a summary of your decision...";
             },
-            saveDecision() {
-                // This method is no longer needed as decisions are saved automatically
-                this.decisionSaved = true;
-            },
             fetchSavedDecisions() {
                 axios.get('/api/get_decisions')
                 .then(response => {
@@ -362,6 +364,34 @@
             },
             closeDecisionDetails() {
                 this.selectedDecision = null;
+            },
+            resumeDecision(decisionId) {
+                axios.get(`/api/resume_decision/${decisionId}`)
+                    .then(response => {
+                        this.decisionId = response.data.decision_id;
+                        this.decisionStarted = true;
+                        this.decisionCompleted = false;
+                        this.currentStep = response.data.current_step;
+                        this.decisionQuestion = response.data.question;
+                        this.stepInputs = response.data.data[this.currentStep.title] || {};
+                        this.getAISuggestion();
+                    })
+                    .catch(error => {
+                        console.error('Error resuming decision:', error);
+                        this.error = 'Error resuming decision. Please try again.';
+                    });
+            },
+            deleteDecision(decisionId) {
+                if (confirm('Are you sure you want to delete this decision?')) {
+                    axios.delete(`/api/delete_decision/${decisionId}`)
+                        .then(() => {
+                            this.fetchSavedDecisions();
+                        })
+                        .catch(error => {
+                            console.error('Error deleting decision:', error);
+                            this.error = 'Error deleting decision. Please try again.';
+                        });
+                }
             },
             setRating(value) {
                 this.rating = value;

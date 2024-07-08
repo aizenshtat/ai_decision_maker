@@ -66,7 +66,7 @@ class Decision(db.Model):
     data = db.Column(MutableDict.as_mutable(JSON), nullable=False, default={})
     current_step = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
+    status = db.Column(db.String(20), default='in_progress')
 
 # Feedback model
 class Feedback(db.Model):
@@ -192,8 +192,9 @@ def submit_step():
     
     if decision.current_step >= len(PERSONAL_DECISION_FRAMEWORK['steps']) - 1:
         summary = generate_decision_summary(decision)
+        decision.status = 'completed'
+        db.session.commit()
         return jsonify({'completed': True, 'summary': summary}), 200
-    
     return jsonify({'completed': False}), 200
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -265,8 +266,36 @@ def get_decisions():
         'framework': d.framework,
         'created_at': d.created_at.isoformat(),
         'current_step': d.current_step,
-        'data': d.data
+        'status': d.status,
+        'total_steps': len(PERSONAL_DECISION_FRAMEWORK['steps'])
     } for d in decisions])
+
+@app.route('/api/resume_decision/<int:decision_id>', methods=['GET'])
+@login_required
+def resume_decision(decision_id):
+    decision = Decision.query.get(decision_id)
+    if not decision or decision.user_id != current_user.id:
+        return jsonify({'error': 'Decision not found'}), 404
+    
+    current_step = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]
+    return jsonify({
+        'decision_id': decision.id,
+        'current_step': current_step,
+        'question': decision.question,
+        'framework': decision.framework,
+        'data': decision.data
+    })
+
+@app.route('/api/delete_decision/<int:decision_id>', methods=['DELETE'])
+@login_required
+def delete_decision(decision_id):
+    decision = Decision.query.get(decision_id)
+    if not decision or decision.user_id != current_user.id:
+        return jsonify({'error': 'Decision not found'}), 404
+    
+    db.session.delete(decision)
+    db.session.commit()
+    return jsonify({'message': 'Decision deleted successfully'})
 
 @app.route('/api/check_login')
 def check_login():
