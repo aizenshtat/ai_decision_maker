@@ -14,7 +14,7 @@
     <div id="app" class="container">
         <h1>AI Decision Maker</h1>
         <div v-if="!isLoggedIn">
-            <p>Please <a href="#" @click="showLoginForm">login</a> or <a href="#" @click="showRegisterForm">register</a> to use the AI Decision Maker.</p>
+            <p>Please <a href="/login">login</a> or <a href="/register">register</a> to use the AI Decision Maker.</p>
         </div>
         <div v-else>
             <div v-if="!decisionStarted">
@@ -191,12 +191,6 @@
         methods: {
             parseMarkdown(content) {
                 return marked.parse(content);
-            },
-            showLoginForm() {
-                // Implement login form display logic
-            },
-            showRegisterForm() {
-                // Implement register form display logic
             },
             startDecision() {
                 console.log('Starting decision process...');
