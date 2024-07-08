@@ -202,8 +202,9 @@
                 .then(response => {
                     console.log('Decision started:', response.data);
                     this.decisionId = response.data.decision_id;
+                    this.totalSteps = response.data.total_steps;  // Add this line
                     this.decisionStarted = true;
-                    this.currentStep = response.data.first_step;
+                    this.currentStep = response.data.steps[0];
                     this.initializeStepInputs();
                     this.getAISuggestion();
                 })
@@ -239,17 +240,28 @@
                 }
             },
             getNextStep() {
-                console.log('Getting next step...');
+                this.currentStepIndex++;
+                console.log('Getting next step...', this.currentStepIndex);
                 this.isLoading = true;
-                axios.get(`/api/get_step?decision_id=${this.decisionId}`)
-                .then(response => {
+
+                axios.get(`/api/get_step?decision_id=${this.decisionId}&step=${this.currentStepIndex}`)
+                    .then(response => {
+                    console.log('Full response:', response);
                     console.log('Next step received:', response.data);
-                    this.currentStep = response.data.step;
-                    this.aiSuggestion = response.data.ai_suggestion;
-                    this.stepInputs = response.data.pre_filled_data || {};
-                    this.initializeStepInputs();
-                    this.progress = ((this.currentStepIndex + 1) / 9) * 100;  // Assuming 9 steps in total
-                    this.currentStepIndex++;
+                    if (response.data.step) {
+                        this.currentStep = response.data.step;
+                        this.aiSuggestion = response.data.ai_suggestion || '';
+                        this.stepInputs = response.data.saved_data || {};
+                        this.initializeStepInputs();
+                        this.progress = (this.currentStepIndex / this.totalSteps) * 100;
+                        if (!this.aiSuggestion) {
+                        this.getAISuggestion();
+                        }
+                    } else {
+                        console.error('Invalid step data:', response.data);
+                        this.currentStepIndex--;
+                        throw new Error('Invalid step data received');
+                    }
                 })
                 .catch(error => {
                     console.error('Error getting next step:', error);
@@ -264,7 +276,9 @@
                 this.isLoading = true;
                 axios.post('/api/submit_step', {
                     decision_id: this.decisionId,
-                    step_data: this.stepInputs
+                    step_index: this.currentStepIndex,
+                    step_data: this.stepInputs,
+                    ai_suggestion: this.aiSuggestion
                 })
                 .then(response => {
                     console.log('Step submitted:', response.data);
@@ -272,10 +286,7 @@
                         this.decisionCompleted = true;
                         this.decisionSummary = response.data.summary;
                     } else {
-                        this.currentStep = response.data.next_step;
-                        this.currentStepIndex++;
-                        this.initializeStepInputs();
-                        this.getAISuggestion();
+                        this.getNextStep();
                     }
                 })
                 .catch(error => {
@@ -288,17 +299,17 @@
             },
             initializeStepInputs() {
                 console.log('Initializing step inputs:', this.currentStep);
-                if (!this.currentStep.fields) {
+                if (!this.currentStep || !this.currentStep.fields) {
                     console.error('No fields found in current step');
                     return;
                 }
                 this.currentStep.fields.forEach(field => {
                     if (!this.stepInputs.hasOwnProperty(field.name)) {
-                        if (field.type === 'list' || field.type === 'list_of_objects') {
-                            this.$set(this.stepInputs, field.name, []);
-                        } else {
-                            this.$set(this.stepInputs, field.name, '');
-                        }
+                    if (field.type === 'list' || field.type === 'list_of_objects') {
+                        this.$set(this.stepInputs, field.name, []);
+                    } else {
+                        this.$set(this.stepInputs, field.name, '');
+                    }
                     }
                 });
                 console.log('Initialized step inputs:', this.stepInputs);

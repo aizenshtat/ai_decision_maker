@@ -1,12 +1,15 @@
-import os
 import json
+from json.decoder import JSONDecodeError
+import os
 import logging
 from logging.handlers import RotatingFileHandler
-from flask import Flask, render_template, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
-from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.ext.mutable import MutableDict
+from sqlalchemy.dialects.sqlite import JSON
+from flask_migrate import Migrate
 import anthropic
 from datetime import datetime
 from dotenv import load_dotenv
@@ -60,7 +63,7 @@ class Decision(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     question = db.Column(db.String(500), nullable=False)
     framework = db.Column(db.String(50), nullable=False)
-    data = db.Column(json, nullable=False, default={})
+    data = db.Column(MutableDict.as_mutable(JSON), nullable=False, default={})
     current_step = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
@@ -82,6 +85,11 @@ def load_user(user_id):
 def index():
     return render_template('index.html')
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(app.root_path, 'static'),
+                               'favicon.svg', mimetype='image/svg+xml')
+
 @app.route('/api/start_decision', methods=['POST'])
 @login_required
 def start_decision():
@@ -95,30 +103,38 @@ def start_decision():
     )
     db.session.add(new_decision)
     db.session.commit()
-    first_step = PERSONAL_DECISION_FRAMEWORK['steps'][0]
     return jsonify({
         'decision_id': new_decision.id, 
-        'first_step': first_step
+        'steps': PERSONAL_DECISION_FRAMEWORK['steps'],
+        'total_steps': len(PERSONAL_DECISION_FRAMEWORK['steps'])
     }), 200
 
 @app.route('/api/get_step', methods=['GET'])
 @login_required
 def get_step():
     decision_id = request.args.get('decision_id')
+    step_index = int(request.args.get('step'))
+    app.logger.info(f"Fetching step {step_index} for decision {decision_id}")
     decision = Decision.query.get(decision_id)
     if decision.user_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
     
-    step = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]
-    current_context = json.dumps(decision.data, indent=2)
+    if step_index >= len(PERSONAL_DECISION_FRAMEWORK['steps']):
+        return jsonify({'error': 'Step index out of range'}), 400
     
-    ai_prompt = generate_prompt(step, current_context)
-    ai_response = get_ai_suggestion(ai_prompt)
+    step = PERSONAL_DECISION_FRAMEWORK['steps'][step_index]
+    step_title = step['title']
+    
+    # Retrieve saved data for this step
+    saved_data = decision.data.get(step_title, {})
+    
+    # Retrieve saved AI suggestion for this step
+    ai_suggestion = decision.data.get(f"{step_title}_ai_suggestion", "")
     
     return jsonify({
         'step': step,
-        'ai_suggestion': ai_response['suggestion'],
-        'pre_filled_data': ai_response['pre_filled_data']
+        'saved_data': saved_data,
+        'ai_suggestion': ai_suggestion
     }), 200
 
 @app.route('/api/get_suggestion', methods=['GET'])
@@ -132,24 +148,16 @@ def get_suggestion():
     
     step = PERSONAL_DECISION_FRAMEWORK['steps'][step_index]
     
-    # Prepare the full context for the AI prompt
+    # Prepare the context for the AI prompt
     current_context = {
         'initial_question': decision.question
     }
-    
-    # Ensure decision.data is a dictionary
-    if not isinstance(decision.data, dict):
-        decision.data = {}
     
     # Include data from all previous steps
     for i in range(step_index):
         previous_step = PERSONAL_DECISION_FRAMEWORK['steps'][i]
         step_data = decision.data.get(previous_step['title'], {})
         current_context[previous_step['title']] = step_data
-    
-    app.logger.info(f"Decision ID: {decision_id}, Current step: {step_index}")
-    app.logger.info(f"Decision data: {json.dumps(decision.data, indent=2)}")
-    app.logger.info(f"Current context for AI prompt: {json.dumps(current_context, indent=2)}")
     
     ai_prompt = generate_prompt(step, current_context)
     ai_response = get_ai_suggestion(ai_prompt)
@@ -160,22 +168,19 @@ def get_suggestion():
 @login_required
 def submit_step():
     data = request.json
-    decision = db.session.get(Decision, data['decision_id'])
+    decision = Decision.query.get(data['decision_id'])
     if decision.user_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
     
-    current_step_title = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]['title']
+    step_index = data['step_index']
+    step_title = PERSONAL_DECISION_FRAMEWORK['steps'][step_index]['title']
     
-    # Ensure decision.data is a dictionary
-    if not isinstance(decision.data, dict):
-        decision.data = {}
+    # Save step data
+    decision.data[step_title] = data['step_data']
     
-    # Update the decision data with the new step data
-    decision.data[current_step_title] = data['step_data']
-    
-    app.logger.info(f"Updating decision {decision.id}, step: {current_step_title}")
-    app.logger.info(f"New step data: {json.dumps(data['step_data'], indent=2)}")
-    app.logger.info(f"Updated decision data: {json.dumps(decision.data, indent=2)}")
+    # Save AI suggestion
+    decision.data[f"{step_title}_ai_suggestion"] = data['ai_suggestion']
+    decision.current_step = step_index
     
     try:
         db.session.commit()
@@ -185,37 +190,70 @@ def submit_step():
         app.logger.error(f"Error updating decision: {str(e)}")
         return jsonify({'error': 'Error saving decision data'}), 500
     
-    # Increment the step after saving the data
-    decision.current_step += 1
-    db.session.commit()
-    
-    if decision.current_step >= len(PERSONAL_DECISION_FRAMEWORK['steps']):
+    if decision.current_step >= len(PERSONAL_DECISION_FRAMEWORK['steps']) - 1:
         summary = generate_decision_summary(decision)
-        decision.current_step = -1  # Indicate decision process is complete
-        db.session.commit()
         return jsonify({'completed': True, 'summary': summary}), 200
     
-    next_step = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]
-    return jsonify({'completed': False, 'next_step': next_step}), 200
+    return jsonify({'completed': False}), 200
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    if not username or not password:
-        return jsonify({'error': 'Username and password are required'}), 400
-    user = User.query.filter_by(username=username).first()
-    if user and user.check_password(password):
-        login_user(user)
-        return jsonify({'message': 'Logged in successfully'}), 200
-    return jsonify({'error': 'Invalid username or password'}), 401
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
+        else:
+            username = request.form.get('username')
+            password = request.form.get('password')
+        
+        if not username or not password:
+            return jsonify({'error': 'Username and password are required'}), 400
+        
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            login_user(user)
+            return jsonify({'message': 'Login successful'}), 200
+        
+        return jsonify({'error': 'Invalid username or password'}), 401
+    
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
+        else:
+            username = request.form.get('username')
+            password = request.form.get('password')
+        
+        if not username or not password:
+            return jsonify({'error': 'Username and password are required'}), 400
+        
+        if User.query.filter_by(username=username).first():
+            return jsonify({'error': 'Username already exists'}), 400
+        
+        new_user = User(username=username)
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.commit()
+        
+        return jsonify({'message': 'Registration successful'}), 200
+    
+    return render_template('register.html')
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
-    return jsonify({'message': 'Logged out successfully'}), 200
+    return redirect(url_for('index'))
 
 @app.route('/api/get_decisions', methods=['GET'])
 @login_required
@@ -269,10 +307,69 @@ def get_ai_suggestion(prompt):
             ]
         )
         app.logger.info(f"Received AI response: {response.content[0].text}")
-        return json.loads(response.content[0].text)
-    except json.JSONDecodeError:
-        app.logger.error(f"Error decoding JSON from AI response: {response.content[0].text}")
-        return {"suggestion": "Error parsing AI suggestion", "pre_filled_data": {}}
+        
+        response_text = response.content[0].text
+        
+        def balance_json(json_string):
+            stack = []
+            in_string = False
+            escape = False
+            for i, char in enumerate(json_string):
+                if char == '"' and not escape:
+                    in_string = not in_string
+                elif not in_string:
+                    if char in '{[':
+                        stack.append(char)
+                    elif char in '}]':
+                        if stack and ((stack[-1] == '{' and char == '}') or (stack[-1] == '[' and char == ']')):
+                            stack.pop()
+                        else:
+                            # Mismatched closing bracket, JSON is malformed
+                            return None
+                
+                escape = char == '\\' and not escape
+            
+            # Close any unclosed strings
+            if in_string:
+                json_string += '"'
+            
+            # Add closing brackets in reverse order
+            closing = ''.join('}' if c == '{' else ']' for c in reversed(stack))
+            return json_string + closing
+
+        # Try to parse the original response
+        try:
+            return json.loads(response_text)
+        except JSONDecodeError:
+            # If parsing fails, try to balance and parse again
+            balanced_json = balance_json(response_text)
+            if balanced_json is not None:
+                try:
+                    return json.loads(balanced_json)
+                except JSONDecodeError:
+                    app.logger.error(f"Failed to parse JSON even after balancing. Response: {balanced_json}")
+            else:
+                app.logger.error(f"JSON structure is malformed. Response: {response_text}")
+            
+            # If it still fails, extract whatever we can
+            suggestion = ""
+            pre_filled_data = {}
+            
+            if '"suggestion":' in response_text:
+                suggestion_parts = response_text.split('"suggestion":', 1)[1].split('"', 2)
+                suggestion = suggestion_parts[1] if len(suggestion_parts) > 1 else ""
+            
+            if '"pre_filled_data":' in response_text:
+                pre_filled_data_str = response_text.split('"pre_filled_data":', 1)[1]
+                try:
+                    pre_filled_data_balanced = balance_json(pre_filled_data_str)
+                    if pre_filled_data_balanced is not None:
+                        pre_filled_data = json.loads(pre_filled_data_balanced)
+                except JSONDecodeError:
+                    app.logger.error(f"Failed to parse pre_filled_data. Extraction attempt: {pre_filled_data_str}")
+            
+            return {"suggestion": suggestion, "pre_filled_data": pre_filled_data}
+        
     except Exception as e:
         app.logger.error(f"Error in get_ai_suggestion: {str(e)}", exc_info=True)
         return {"suggestion": "Error generating AI suggestion", "pre_filled_data": {}}
@@ -296,7 +393,7 @@ def generate_decision_summary(decision):
     try:
         response = client.messages.create(
             model="claude-3-5-sonnet-20240620",
-            max_tokens=2048,
+            max_tokens=4000,
             messages=[
                 {"role": "user", "content": prompt}
             ]

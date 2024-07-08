@@ -37,6 +37,14 @@ def generate_field_format(fields):
         elif field['type'] == 'list_of_objects':
             object_format = ", ".join([f'"{k}": "Example {k}"' for k in field['object_structure'].keys()])
             formats.append(f'"{field["name"]}": [{{{object_format}}}, {{{object_format}}}]')
+        elif field['type'] == 'matrix':
+            matrix_format = (
+                f'"{field["name"]}": {{'
+                f'"Option 1": {{"Criterion 1": 5, "Criterion 2": 4}},'
+                f'"Option 2": {{"Criterion 1": 3, "Criterion 2": 5}}'
+                f'}}'
+            )
+            formats.append(matrix_format)
         else:
             formats.append(f'"{field["name"]}": "Example {field["name"]}"')
     return ",\n        ".join(formats)

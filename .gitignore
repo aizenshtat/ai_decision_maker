@@ -76,3 +76,7 @@ coverage.xml
 
 # Alembic stuff:
 alembic.ini
+
+# Claude Engineer
+main-claude-eng.py
+requirements-claude-eng.txt
