@@ -270,6 +270,23 @@ def get_decisions():
         'total_steps': len(PERSONAL_DECISION_FRAMEWORK['steps'])
     } for d in decisions])
 
+@app.route('/api/get_decision_details/<int:decision_id>', methods=['GET'])
+@login_required
+def get_decision_details(decision_id):
+    decision = Decision.query.get(decision_id)
+    if not decision or decision.user_id != current_user.id:
+        return jsonify({'error': 'Decision not found'}), 404
+    
+    return jsonify({
+        'id': decision.id,
+        'question': decision.question,
+        'framework': decision.framework,
+        'created_at': decision.created_at.isoformat(),
+        'current_step': decision.current_step,
+        'status': decision.status,
+        'total_steps': len(PERSONAL_DECISION_FRAMEWORK['steps']),
+    })
+
 @app.route('/api/resume_decision/<int:decision_id>', methods=['GET'])
 @login_required
 def resume_decision(decision_id):
@@ -278,12 +295,17 @@ def resume_decision(decision_id):
         return jsonify({'error': 'Decision not found'}), 404
     
     current_step = PERSONAL_DECISION_FRAMEWORK['steps'][decision.current_step]
+    ai_suggestion = decision.data.get(f"{current_step['title']}_ai_suggestion", "")
+    
     return jsonify({
         'decision_id': decision.id,
         'current_step': current_step,
+        'current_step_index': decision.current_step,
         'question': decision.question,
         'framework': decision.framework,
-        'data': decision.data
+        'data': decision.data,
+        'total_steps': len(PERSONAL_DECISION_FRAMEWORK['steps']),
+        'ai_suggestion': ai_suggestion
     })
 
 @app.route('/api/delete_decision/<int:decision_id>', methods=['DELETE'])
