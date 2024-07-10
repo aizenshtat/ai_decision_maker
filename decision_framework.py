@@ -116,23 +116,18 @@ PERSONAL_DECISION_FRAMEWORK = {
                     "label": "Option Evaluations",
                     "description": "Rate each option against each criterion",
                     "matrix_structure": {
-                        "rows": {
-                            "source": "options",
-                            "step": "Identify Options",
-                            "field": "options"
-                        },
-                        "columns": {
-                            "source": "criteria",
-                            "step": "Establish Criteria",
-                            "field": "criteria",
-                            "use": "name"
-                        }
+                        "rows": "options",
+                        "columns": "criteria"
                     },
                     "cell_format": {
                         "type": "number",
                         "min": 1,
                         "max": 5,
                         "step": 1
+                    },
+                    "dependencies": {
+                        "rows": {"step": "Identify Options", "field": "options", "use": "name"},    
+                        "columns": {"step": "Establish Criteria", "field": "criteria", "use": "name"}
                     }
                 },
                 {
@@ -146,7 +141,7 @@ PERSONAL_DECISION_FRAMEWORK = {
                         "weaknesses": "textarea"
                     },
                     "dependencies": {
-                        "option": {"step": "Identify Options", "field": "options"}
+                        "option": {"step": "Identify Options", "field": "options", "use": "name"} 
                     }
                 }
             ],
@@ -168,7 +163,7 @@ PERSONAL_DECISION_FRAMEWORK = {
                         "risks": "textarea"
                     },
                     "dependencies": {
-                        "option": {"step": "Identify Options", "field": "options"}
+                        "option": {"step": "Identify Options", "field": "options", "use": "name"} 
                     }
                 },
                 {
@@ -194,7 +189,7 @@ PERSONAL_DECISION_FRAMEWORK = {
                     "label": "Chosen Option",
                     "description": "The option you've decided to pursue",
                     "dependencies": {
-                        "options": {"step": "Identify Options", "field": "options"}
+                        "options": {"step": "Identify Options", "field": "options", "use": "name"} 
                     }
                 },
                 {

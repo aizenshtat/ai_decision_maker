@@ -34,67 +34,110 @@
                 <form @submit.prevent="submitStep">
                     <div v-for="field in currentStep.fields" :key="field.name" class="field-container">
                         <label :for="field.name">${field.label}</label>
-                        <input v-if="field.type === 'text'" :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" type="text" :disabled="isAIProcessing">
-                        <textarea v-if="field.type === 'textarea'" :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" :disabled="isAIProcessing"></textarea>
-                        <input v-if="field.type === 'number'" :id="field.name" v-model.number="stepInputs[field.name]" type="number" :min="field.min" :max="field.max" :step="field.step" :disabled="isAIProcessing">
-                        <div v-if="field.type === 'list'">
-                            <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-field-item">
-                                <input v-model="stepInputs[field.name][index]" type="text" :disabled="isAIProcessing">
-                                <button @click.prevent="removeListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
-                            </div>
-                            <button @click.prevent="addListItem(field.name)" type="button" :disabled="isAIProcessing">Add Item</button>
-                        </div>
-                        <div v-if="field.type === 'list_of_objects'">
-                            <div v-for="(item, index) in stepInputs[field.name] || []" :key="index">
-                                <div v-for="(value, key) in field.object_structure" :key="key">
-                                    <input v-if="value === 'text'" v-model="item[key]" :placeholder="key">
-                                    <textarea v-else-if="value === 'textarea'" v-model="item[key]" :placeholder="key"></textarea>
-                                    <input v-else-if="typeof value === 'object' && value.type === 'number'" v-model.number="item[key]" type="number" :min="value.min" :max="value.max" :step="value.step" :placeholder="key">
-                                </div>
-                                <button @click.prevent="removeListItem(field.name, index)">Remove</button>
-                            </div>
-                            <button @click.prevent="addListItem(field)">Add Item</button>
-                        </div>
-                        <div v-if="field.type === 'select'">
-                            <select v-model="stepInputs[field.name]">
-                                <option v-for="option in field.options" :key="option" :value="option">${option}</option>
-                            </select>
-                        </div>
-                        <div v-else-if="field.type === 'matrix'">
+                        <div v-if="field.type === 'matrix'">
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>${field.matrix_structure.rows.source}</th>
-                                        <th v-for="column in field.column_options" :key="column">${column}</th>
+                                        <th>${field.matrix_structure.rows}</th>
+                                        <th v-for="column in getDependentValues(field, 'columns')" :key="column">${column}</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="(row, rowName) in stepInputs[field.name]" :key="rowName">
-                                        <td>
-                                            <select v-model="row.name">
-                                                <option v-for="option in availableOptions(field)" :key="option" :value="option">${option}</option>
-                                            </select>
-                                        </td>
-                                        <td v-for="column in field.column_options" :key="column">
+                                    <tr v-for="row in getUnusedDependentValues(field, 'rows')" :key="row">
+                                        <td>${row}</td>
+                                        <td v-for="column in getDependentValues(field, 'columns')" :key="column">
                                             <input 
                                                 :type="field.cell_format.type"
-                                                v-model.number="row[column]"
+                                                v-model.number="stepInputs[field.name][row][column]"
                                                 :min="field.cell_format.min"
                                                 :max="field.cell_format.max"
                                                 :step="field.cell_format.step"
+                                                :disabled="isAIProcessing"
                                             >
                                         </td>
                                         <td>
-                                            <button @click.prevent="removeMatrixRow(field.name, rowName)">Remove</button>
+                                            <button @click.prevent="removeMatrixRow(field.name, rowName)" :disabled="isAIProcessing">Remove</button>
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
-                            <button @click.prevent="addMatrixRow(field)" :disabled="!availableOptions(field).length">Add Row</button>
+                            <button @click.prevent="addMatrixRow(field)" :disabled="isAIProcessing || !getUnusedDependentValues(field).length">Add Row</button>
                         </div>
-                        
+                        <div v-else-if="field.type === 'list_of_objects'">
+                            <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-item">
+                                <div v-for="(value, key) in field.object_structure" :key="key">
+                                    <label>${key}</label>
+                                    <select v-if="field.dependencies && field.dependencies[key]" 
+                                            v-model="item[key]"
+                                            :disabled="isAIProcessing">
+                                        <option v-for="option in getUnusedDependentValues(field, key)" :key="option" :value="option">${option}</option>
+                                    </select>
+                                    <textarea v-else-if="value === 'textarea'"
+                                            v-model="item[key]"
+                                            :disabled="isAIProcessing"></textarea>
+                                            <input v-else-if="typeof value === 'object' && value.type === 'number'"
+                                            type="number"
+                                            v-model.number="item[key]"
+                                            :min="value.min"
+                                            :max="value.max"
+                                            :step="value.step"
+                                            :disabled="isAIProcessing"
+                                            @input="validateField(field, item, key, index)">
+                                    <input v-else
+                                            :type="typeof value === 'object' ? value.type : value"
+                                            v-model="item[key]"
+                                            :disabled="isAIProcessing">
+                                    <span v-if="getFieldError(field, index, key)" class="error-message">${getFieldError(field, index, key)}</span>
+                                </div>
+                                <button @click.prevent="removeListItem(field.name, index)" :disabled="isAIProcessing">Remove</button>
+                            </div>
+                            <button @click.prevent="addListItem(field)" :disabled="isAIProcessing">Add Item</button>
+                            <span v-if="getTotalWeightError(field)" class="error-message">${getTotalWeightError(field)}</span>
+                        </div>
+                        <div v-else-if="field.type === 'list'">
+                            <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-item">
+                                <input v-if="!field.dependencies" 
+                                        v-model="stepInputs[field.name][index]" 
+                                        type="text" 
+                                        :disabled="isAIProcessing" 
+                                        :placeholder="field.placeholder">
+                                <select v-else
+                                        v-model="stepInputs[field.name][index]"
+                                        :disabled="isAIProcessing">
+                                    <option v-for="option in getDependentValues(field, 'options')" :key="option" :value="option">${option}</option>
+                                </select>
+                                <button @click.prevent="removeListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
+                            </div>
+                            <button @click.prevent="addListItem(field)" type="button" :disabled="isAIProcessing">Add Item</button>
+                        </div>
+                        <div v-else-if="field.type === 'select'">
+                            <select v-model="stepInputs[field.name]" :disabled="isAIProcessing">
+                                <option v-for="option in field.dependencies ? getDependentValues(field, 'options') : field.options" 
+                                        :key="option" 
+                                        :value="option">${option}</option>
+                            </select>
+                        </div>
+                        <div v-else>
+                            <textarea v-if="field.type === 'textarea'"
+                                    v-model="stepInputs[field.name]"
+                                    :disabled="isAIProcessing"></textarea>
+                            <select v-else-if="field.dependencies"
+                                    v-model="stepInputs[field.name]"
+                                    :disabled="isAIProcessing">
+                                <option v-for="option in getDependentValues(field, 'options')" :key="option" :value="option">${option}</option>
+                            </select>
+                            <input v-else
+                                   :type="field.type"
+                                   v-model="stepInputs[field.name]"
+                                   :disabled="isAIProcessing">
+                        </div>
                         <p v-if="getFieldError(field)" class="error">${getFieldError(field)}</p>
+                    </div>
+
+                    <div v-if="weightInfo" class="weight-info">
+                        <p>Total Weight: ${weightInfo.total} / ${weightInfo.max}</p>
+                        <p>Remaining Weight: ${weightInfo.remaining}</p>
                     </div>
 
                     <div class="navigation-buttons">
@@ -117,14 +160,11 @@
                 <p class="progress-text">${Math.round(progress)}% Complete</p>
             </div>
     
-            <div v-else>
+            <div v-if="decisionCompleted">
                 <h2>Decision Summary</h2>
-                <div class="decision-summary" v-html="marked.parse(decisionSummary)"></div>
-                <button @click="saveDecision" :disabled="decisionSaved">
-                    ${decisionSaved ? 'Decision Saved' : 'Save Decision'}
-                </button>
-            
-                <div v-if="decisionSaved && !feedbackSubmitted" class="feedback-form">
+                <div class="decision-summary" v-html="parseMarkdown(decisionSummary)"></div>
+                
+                <div v-if="!feedbackSubmitted" class="feedback-form">
                     <h3>Provide Feedback</h3>
                     <p>How helpful was this decision-making process?</p>
                     <div class="rating">
@@ -161,22 +201,31 @@
                 </ul>
             </div>
 
-            <div v-if="selectedDecision" class="modal">
+            <div v-if="isModalOpen" class="modal">
                 <div class="modal-content">
                     <span class="close" @click="closeDecisionDetails">&times;</span>
                     <h2>Decision Details</h2>
-                    <p><strong>Question:</strong> ${selectedDecision.question}</p>
-                    <p><strong>Framework:</strong> ${selectedDecision.framework}</p>
-                    <p><strong>Created:</strong> ${new Date(selectedDecision.created_at).toLocaleString()}</p>
-                    <div v-if="!selectedDecision.feedback">
-                        <h3>Provide Feedback</h3>
-                        <div class="feedback-form">
-                            <p>How helpful was this decision-making process?</p>
-                            <div class="rating">
-                                <span v-for="i in 5" :key="i" @click="setRating(i)" :class="{ 'selected': rating >= i }">☆</span>
+                    <div v-if="selectedDecision">
+                        <p><strong>Question:</strong> ${selectedDecision.question}</p>
+                        <p><strong>Framework:</strong> ${selectedDecision.framework}</p>
+                        <p><strong>Created:</strong> ${new Date(selectedDecision.created_at).toLocaleString()}</p>
+                        <p><strong>Status:</strong> ${selectedDecision.status}</p>
+                        
+                        <div v-if="selectedDecision && selectedDecision.status === 'completed'">
+                            <h3>Decision Summary</h3>
+                            <div class="decision-summary" v-html="parseMarkdown(selectedDecision.summary)"></div>
+                        </div>
+            
+                        <div v-if="!selectedDecision.feedback">
+                            <h3>Provide Feedback</h3>
+                            <div class="feedback-form">
+                                <p>How helpful was this decision-making process?</p>
+                                <div class="rating">
+                                    <span v-for="i in 5" :key="i" @click="setRating(i)" :class="{ 'selected': rating >= i }">☆</span>
+                                </div>
+                                <textarea v-model="feedbackComment" placeholder="Additional comments (optional)"></textarea>
+                                <button @click="submitFeedback(selectedDecision.id)">Submit Feedback</button>
                             </div>
-                            <textarea v-model="feedbackComment" placeholder="Additional comments (optional)"></textarea>
-                            <button @click="submitFeedback(selectedDecision.id)">Submit Feedback</button>
                         </div>
                     </div>
                 </div>
@@ -192,6 +241,7 @@
             isLoggedIn: false,
             decisionQuestion: '',
             decisionStarted: false,
+            steps: [],
             currentStep: null,
             currentStepIndex: 0,
             aiSuggestion: null,
@@ -204,15 +254,28 @@
             feedbackComment: '',
             feedbackSubmitted: false,
             isLoading: false,
+            isModalOpen: false,
             selectedDecision: null,
             stepInputs: {},
             decisionId: null,
             isAIProcessing: false,
-            fieldErrors: {}
+            fieldErrors: {},
+            marked: marked
         },
         computed: {
-            getFieldError() {
-                return (field) => this.fieldErrors[field.name] || null;
+            weightInfo() {
+                const criteriaField = this.currentStep.fields.find(f => f.name === 'criteria');
+                if (criteriaField && criteriaField.validation && criteriaField.validation.total_weight) {
+                    const totalWeight = this.stepInputs[criteriaField.name].reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
+                    const maxWeight = criteriaField.validation.total_weight.max;
+                    const remainingWeight = Math.max(0, maxWeight - totalWeight);
+                    return {
+                        total: totalWeight,
+                        remaining: remainingWeight,
+                        max: maxWeight
+                    };
+                }
+                return null;
             },
             progress() {
                 if (!this.totalSteps) return 0;
@@ -220,19 +283,36 @@
             }
         },
         methods: {
-            validateField(field) {
-                if (field.validation) {
-                    if (field.validation.total_weight) {
-                        const totalWeight = this.stepInputs[field.name].reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
-                        if (totalWeight > field.validation.total_weight.max) {
-                            this.$set(this.fieldErrors, field.name, field.validation.total_weight.message);
-                            return false;
-                        }
-                    }
-                    // Add more validation types here as needed
+            getFieldError(field, index, key) {
+                if (index !== undefined && key !== undefined) {
+                    return this.fieldErrors[`${field.name}.${index}.${key}`];
                 }
-                this.$delete(this.fieldErrors, field.name);
-                return true;
+                return null;
+            },
+            getTotalWeightError(field) {
+                return this.fieldErrors[field.name];
+            },
+            validateField(field, item, key, index) {
+                if (typeof field.object_structure[key] === 'object' && field.object_structure[key].type === 'number') {
+                    const value = item[key];
+                    const { min, max } = field.object_structure[key];
+                    if (value < min || value > max) {
+                        this.$set(this.fieldErrors, `${field.name}.${index}.${key}`, `Value must be between ${min} and ${max}`);
+                    } else {
+                        this.$delete(this.fieldErrors, `${field.name}.${index}.${key}`);
+                    }
+                }
+                this.validateTotalWeight(field);
+            },
+            validateTotalWeight(field) {
+                if (field.validation && field.validation.total_weight) {
+                    const totalWeight = this.stepInputs[field.name].reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
+                    if (totalWeight > field.validation.total_weight.max) {
+                        this.$set(this.fieldErrors, field.name, field.validation.total_weight.message);
+                    } else {
+                        this.$delete(this.fieldErrors, field.name);
+                    }
+                }
             },
             isStepValid() {
                 if (!this.currentStep || !this.currentStep.fields) return false;
@@ -339,10 +419,6 @@
                 });
             },
             submitStep() {
-                if (!this.isStepValid()) {
-                    alert('Please correct the errors before proceeding.');
-                    return;
-                }
                 console.log('Submitting step:', this.stepInputs);
                 this.isLoading = true;
                 axios.post('/api/submit_step', {
@@ -385,59 +461,76 @@
                 });
                 console.log('Initialized step inputs:', this.stepInputs);
             },
-            addListItem(fieldName) {
-                if (!Array.isArray(this.stepInputs[fieldName])) {
-                    this.$set(this.stepInputs, fieldName, []);
+            
+            addListItem(field) {
+                if (!Array.isArray(this.stepInputs[field.name])) {
+                    this.$set(this.stepInputs, field.name, []);
                 }
-                this.stepInputs[fieldName].push('');
+                const newItem = {};
+                Object.keys(field.object_structure).forEach(key => {
+                    if (typeof field.object_structure[key] === 'object' && field.object_structure[key].type === 'number') {
+                        newItem[key] = field.object_structure[key].min;
+                    } else if (field.dependencies && field.dependencies[key]) {
+                        const unusedValues = this.getUnusedDependentValues(field, key);
+                        newItem[key] = unusedValues.length > 0 ? unusedValues[0] : '';
+                    } else {
+                        newItem[key] = '';
+                    }
+                });
+                this.stepInputs[field.name].push(newItem);
+                this.validateTotalWeight(field);
             },
+            
             removeListItem(fieldName, index) {
                 this.stepInputs[fieldName].splice(index, 1);
             },
-            addObjectListItem(fieldName, objectStructure) {
-                if (!this.stepInputs[fieldName]) {
-                    this.$set(this.stepInputs, fieldName, []);
-                }
-                const newItem = {};
-                Object.keys(objectStructure).forEach(key => {
-                    newItem[key] = '';
-                });
-                this.stepInputs[fieldName].push(newItem);
-            },
-            removeObjectListItem(fieldName, index) {
-                if (this.stepInputs[fieldName] && this.stepInputs[fieldName].length > index) {
-                    this.stepInputs[fieldName].splice(index, 1);
-                }
-            },
+
             addMatrixRow(field) {
-                const availableOption = this.availableOptions(field)[0];
-                if (availableOption) {
+                const unusedValues = this.getUnusedDependentValues(field, 'rows');
+                if (unusedValues.length > 0) {
                     if (!this.stepInputs[field.name]) {
                         this.$set(this.stepInputs, field.name, {});
                     }
                     const newRow = {};
-                    field.column_options.forEach(column => {
+                    this.getDependentValues(field, 'columns').forEach(column => {
                         newRow[column] = field.cell_format.min;
                     });
-                    this.$set(this.stepInputs[field.name], availableOption, newRow);
+                    this.$set(this.stepInputs[field.name], unusedValues[0], newRow);
                 }
             },
-                
-            removeMatrixRow(fieldName, optionName) {
-                if (this.stepInputs[fieldName] && this.stepInputs[fieldName][optionName]) {
-                    this.$delete(this.stepInputs[fieldName], optionName);
+            
+            removeMatrixRow(fieldName, rowName) {
+                if (this.stepInputs[fieldName] && this.stepInputs[fieldName][rowName]) {
+                    this.$delete(this.stepInputs[fieldName], rowName);
                 }
             },
-            availableOptions(field) {
+            getDependentValues(field, dependencyType) {
+                if (!field.dependencies || !field.dependencies[dependencyType]) return [];
+
+                const dependency = field.dependencies[dependencyType];
+                const dependentField = this.currentStep.fields.find(f => f.name === dependency.field);
+                if (!dependentField) return [];
+
+                const values = this.stepInputs[dependentField.name] || [];
+                return values.map(value => value[dependency.use]);
+            },
+
+            getUnusedDependentValues(field, dependencyType) {
+                const allValues = this.getDependentValues(field, dependencyType);
+                const usedValues = this.getUsedValues(field, dependencyType);
+                return allValues.filter(value => !usedValues.includes(value));
+            },
+
+            getUsedValues(field, dependencyType) {
                 if (field.type === 'matrix') {
-                    const allOptions = field.matrix_structure?.rows?.source === 'options' 
-                        ? this.stepInputs.options || []
-                        : field.row_options || [];
-                    const usedOptions = Object.keys(this.stepInputs[field.name] || {});
-                    return allOptions.filter(option => !usedOptions.includes(option));
+                    return Object.keys(this.stepInputs[field.name] || {});
+                } else if (field.type === 'list_of_objects') {
+                    return (this.stepInputs[field.name] || []).map(item => item[field.dependencies[dependencyType].use]);
+                } else {
+                    return [this.stepInputs[field.name]];
                 }
-                return [];
             },
+
             previousStep() {
                 if (this.currentStepIndex > 1) {
                     this.currentStepIndex -= 2;
@@ -459,18 +552,20 @@
                 });
             },
             showDecisionDetails(decision) {
-                this.selectedDecision = decision;
                 axios.get(`/api/get_decision_details/${decision.id}`)
                     .then(response => {
                         this.selectedDecision = response.data;
+                        this.isModalOpen = true;
                     })
                     .catch(error => {
                         console.error('Error fetching decision details:', error);
                         this.error = 'Error fetching decision details. Please try again.';
                     });
             },
+
             closeDecisionDetails() {
                 this.selectedDecision = null;
+                this.isModalOpen = false;
             },
             resumeDecision(decisionId) {
                 axios.get(`/api/resume_decision/${decisionId}`)

@@ -16,7 +16,7 @@ Consider the following fields that the user needs to complete:
 {fields}
 
 Based on the user's input so far and the requirements of this step, provide:
-1. A brief explanation and suggestions for this step (in markdown format)
+1. A brief explanation and suggestions for this step (in markdown format) Important: always use \n for new lines.
 2. Pre-filled data for the user input fields, based on your best guess of what user would write
 
 Please ensure that your pre-filled data adheres to the field types, structures, and validations described above.
@@ -51,8 +51,8 @@ def generate_field_description(field):
     
     if field['type'] == 'matrix':
         description += f"  Matrix Structure:\n"
-        description += f"    Rows: {field['matrix_structure']['rows']['source']}\n"
-        description += f"    Columns: {field['matrix_structure']['columns']['source']}\n"
+        description += f"    Rows: {field['matrix_structure']['rows']}\n"
+        description += f"    Columns: {field['matrix_structure']['columns']}\n"
         if 'cell_format' in field:
             description += f"  Cell Format: {field['cell_format']}\n"
     elif field['type'] == 'list_of_objects':

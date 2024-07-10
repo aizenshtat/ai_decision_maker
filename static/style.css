@@ -420,7 +420,6 @@ input[type="range"]::-moz-range-thumb {
     border: 1px solid #888;
     width: 80%;
     max-width: 600px;
-    border-radius: 5px;
 }
 
 .close {
@@ -500,6 +499,13 @@ input[type="range"]::-moz-range-thumb {
     padding: 1rem;
     border-radius: 4px;
     margin-bottom: 1rem;
+}
+
+.error-message {
+    color: red;
+    font-size: 0.8em;
+    margin-top: 0.2em;
+    display: block;
 }
 
 /* Responsive design */
@@ -603,24 +609,27 @@ input[type="range"]::-moz-range-thumb {
         font-size: 1rem;
     }
 
-    .list-field-item {
-        display: flex;
-        align-items: center;
-        margin-bottom: 0.5rem;
+    .list-item {
+        margin-bottom: 10px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
     }
-
-    .list-field-item input {
-        flex-grow: 1;
-        margin-right: 0.5rem;
+    
+    .list-item label {
+        display: block;
+        margin-bottom: 5px;
     }
-
-    .list-field-item button {
-        padding: 0.5rem;
-        background-color: #e74c3c;
+    
+    .list-item input,
+    .list-item select {
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 10px;
     }
-
-    .list-field-item button:hover {
-        background-color: #c0392b;
+    
+    .list-item button {
+        margin-top: 10px;
     }
 
     /* Login and Register forms */
@@ -699,6 +708,17 @@ input[type="range"]::-moz-range-thumb {
     
     select, button {
         width: 100%;
+    }
+
+    .weight-info {
+        background-color: #f0f0f0;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+    
+    .weight-info p {
+        margin: 5px 0;
     }
 
 }

@@ -67,6 +67,7 @@ class Decision(db.Model):
     current_step = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     status = db.Column(db.String(20), default='in_progress')
+    summary = db.Column(db.Text)
 
 # Feedback model
 class Feedback(db.Model):
@@ -119,35 +120,19 @@ def get_step():
         return jsonify({'error': 'Unauthorized'}), 403
     
     step = PERSONAL_DECISION_FRAMEWORK['steps'][step_index]
-
-    if step['title'] == 'Evaluate Options':
-        options = decision.data.get('Identify Options', {}).get('options', [])
-        for field in step['fields']:
-            if field['name'] == 'evaluations':
-                field['row_options'] = [option['name'] for option in options]
     
     for field in step['fields']:
         if field['type'] == 'matrix':
             matrix_structure = field['matrix_structure']
-            rows_data = decision.data.get(matrix_structure['rows']['step'], {}).get(matrix_structure['rows']['field'], [])
-            columns_data = decision.data.get(matrix_structure['columns']['step'], {}).get(matrix_structure['columns']['field'], [])
-            
-            field['row_options'] = [option['name'] for option in rows_data]
-            field['column_options'] = [item[matrix_structure['columns'].get('use', 'name')] for item in columns_data]
-        
-        elif field['type'] == 'list_of_objects':
             if 'dependencies' in field:
-                for dep_key, dep_value in field['dependencies'].items():
-                    dep_data = decision.data.get(dep_value['step'], {}).get(dep_value['field'], [])
-                    field['dependent_options'] = [option['name'] for option in dep_data]
-        
-        elif field['type'] == 'select':
-            if 'dependencies' in field:
-                dep_value = field['dependencies']['options']
-                dep_data = decision.data.get(dep_value['step'], {}).get(dep_value['field'], [])
-                field['options'] = [option['name'] for option in dep_data]
-        
-        # Add handling for any other field types with dependencies here
+                if 'rows' in field['dependencies']:
+                    dep = field['dependencies']['rows']
+                    rows_data = decision.data.get(dep['step'], {}).get(dep['field'], [])
+                    field['row_options'] = [option[dep['use']] for option in rows_data]
+                if 'columns' in field['dependencies']:
+                    dep = field['dependencies']['columns']
+                    columns_data = decision.data.get(dep['step'], {}).get(dep['field'], [])
+                    field['column_options'] = [item[dep['use']] for item in columns_data]
     
     saved_data = decision.data.get(step['title'], {})
     ai_suggestion = decision.data.get(f"{step['title']}_ai_suggestion", "")
@@ -202,7 +187,7 @@ def submit_step():
     # Save AI suggestion
     decision.data[f"{step_title}_ai_suggestion"] = data['ai_suggestion']
     decision.current_step = step_index
-    
+
     try:
         db.session.commit()
         app.logger.info(f"Decision {decision.id} updated successfully")
@@ -210,10 +195,10 @@ def submit_step():
         db.session.rollback()
         app.logger.error(f"Error updating decision: {str(e)}")
         return jsonify({'error': 'Error saving decision data'}), 500
-    
     if decision.current_step >= len(PERSONAL_DECISION_FRAMEWORK['steps']) - 1:
         summary = generate_decision_summary(decision)
         decision.status = 'completed'
+        decision.summary = summary
         db.session.commit()
         return jsonify({'completed': True, 'summary': summary}), 200
     return jsonify({'completed': False}), 200
@@ -298,15 +283,25 @@ def get_decision_details(decision_id):
     if not decision or decision.user_id != current_user.id:
         return jsonify({'error': 'Decision not found'}), 404
     
-    return jsonify({
+    details = {
         'id': decision.id,
         'question': decision.question,
         'framework': decision.framework,
         'created_at': decision.created_at.isoformat(),
-        'current_step': decision.current_step,
         'status': decision.status,
+        'current_step': decision.current_step,
         'total_steps': len(PERSONAL_DECISION_FRAMEWORK['steps']),
-    })
+        'summary': decision.summary or 'Summary not available'
+    }
+
+    feedback = Feedback.query.filter_by(decision_id=decision.id).first()
+    if feedback:
+        details['feedback'] = {
+            'rating': feedback.rating,
+            'comment': feedback.comment
+        }
+
+    return jsonify(details)
 
 @app.route('/api/resume_decision/<int:decision_id>', methods=['GET'])
 @login_required
