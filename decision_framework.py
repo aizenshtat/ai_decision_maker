@@ -189,7 +189,7 @@ PERSONAL_DECISION_FRAMEWORK = {
                     "label": "Chosen Option",
                     "description": "The option you've decided to pursue",
                     "dependencies": {
-                        "options": {"step": "Identify Options", "field": "options", "use": "name"} 
+                        "step": "Identify Options", "field": "options", "use": "name" 
                     }
                 },
                 {

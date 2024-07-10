@@ -16,7 +16,7 @@ Consider the following fields that the user needs to complete:
 {fields}
 
 Based on the user's input so far and the requirements of this step, provide:
-1. A brief explanation and suggestions for this step (in markdown format) Important: always use \n for new lines.
+1. A brief explanation and suggestions for this step (in markdown format) Important: always use \\n for new lines.
 2. Pre-filled data for the user input fields, based on your best guess of what user would write
 
 Please ensure that your pre-filled data adheres to the field types, structures, and validations described above.

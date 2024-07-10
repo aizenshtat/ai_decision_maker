@@ -39,14 +39,13 @@
                                 <thead>
                                     <tr>
                                         <th>${field.matrix_structure.rows}</th>
-                                        <th v-for="column in getDependentValues(field, 'columns')" :key="column">${column}</th>
-                                        <th>Actions</th>
+                                        <th v-for="column in field.column_options" :key="column">${column}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="row in getUnusedDependentValues(field, 'rows')" :key="row">
+                                    <tr v-for="row in field.row_options" :key="row">
                                         <td>${row}</td>
-                                        <td v-for="column in getDependentValues(field, 'columns')" :key="column">
+                                        <td v-for="column in field.column_options" :key="column">
                                             <input 
                                                 :type="field.cell_format.type"
                                                 v-model.number="stepInputs[field.name][row][column]"
@@ -56,38 +55,39 @@
                                                 :disabled="isAIProcessing"
                                             >
                                         </td>
-                                        <td>
-                                            <button @click.prevent="removeMatrixRow(field.name, rowName)" :disabled="isAIProcessing">Remove</button>
-                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
-                            <button @click.prevent="addMatrixRow(field)" :disabled="isAIProcessing || !getUnusedDependentValues(field).length">Add Row</button>
                         </div>
+                        
                         <div v-else-if="field.type === 'list_of_objects'">
-                            <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-item">
+                            <div v-for="(item, index) in stepInputs[field.name]" :key="index">
                                 <div v-for="(value, key) in field.object_structure" :key="key">
                                     <label>${key}</label>
-                                    <select v-if="field.dependencies && field.dependencies[key]" 
+                                    <select v-if="field.dependent_options && field.dependent_options[key]" 
                                             v-model="item[key]"
+                                            :placeholder="field.placeholder"
                                             :disabled="isAIProcessing">
-                                        <option v-for="option in getUnusedDependentValues(field, key)" :key="option" :value="option">${option}</option>
+                                        <option v-for="option in field.dependent_options[key]" :key="option" :value="option">${option}</option>
                                     </select>
                                     <textarea v-else-if="value === 'textarea'"
                                             v-model="item[key]"
+                                            :placeholder="field.placeholder"
                                             :disabled="isAIProcessing"></textarea>
-                                            <input v-else-if="typeof value === 'object' && value.type === 'number'"
+                                    <input v-else-if="typeof value === 'object' && value.type === 'number'"
                                             type="number"
                                             v-model.number="item[key]"
                                             :min="value.min"
                                             :max="value.max"
                                             :step="value.step"
+                                            :placeholder="field.placeholder"
                                             :disabled="isAIProcessing"
                                             @input="validateField(field, item, key, index)">
                                     <input v-else
-                                            :type="typeof value === 'object' ? value.type : value"
-                                            v-model="item[key]"
-                                            :disabled="isAIProcessing">
+                                           :type="typeof value === 'object' ? value.type : value"
+                                           v-model="item[key]"
+                                           :placeholder="field.placeholder"
+                                           :disabled="isAIProcessing">
                                     <span v-if="getFieldError(field, index, key)" class="error-message">${getFieldError(field, index, key)}</span>
                                 </div>
                                 <button @click.prevent="removeListItem(field.name, index)" :disabled="isAIProcessing">Remove</button>
@@ -97,25 +97,17 @@
                         </div>
                         <div v-else-if="field.type === 'list'">
                             <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-item">
-                                <input v-if="!field.dependencies" 
-                                        v-model="stepInputs[field.name][index]" 
+                                <input v-model="stepInputs[field.name][index]" 
                                         type="text" 
                                         :disabled="isAIProcessing" 
                                         :placeholder="field.placeholder">
-                                <select v-else
-                                        v-model="stepInputs[field.name][index]"
-                                        :disabled="isAIProcessing">
-                                    <option v-for="option in getDependentValues(field, 'options')" :key="option" :value="option">${option}</option>
-                                </select>
                                 <button @click.prevent="removeListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
                             </div>
                             <button @click.prevent="addListItem(field)" type="button" :disabled="isAIProcessing">Add Item</button>
                         </div>
                         <div v-else-if="field.type === 'select'">
                             <select v-model="stepInputs[field.name]" :disabled="isAIProcessing">
-                                <option v-for="option in field.dependencies ? getDependentValues(field, 'options') : field.options" 
-                                        :key="option" 
-                                        :value="option">${option}</option>
+                                <option v-for="option in field.options" :key="option" :value="option">${option}</option>
                             </select>
                         </div>
                         <div v-else>
@@ -125,7 +117,7 @@
                             <select v-else-if="field.dependencies"
                                     v-model="stepInputs[field.name]"
                                     :disabled="isAIProcessing">
-                                <option v-for="option in getDependentValues(field, 'options')" :key="option" :value="option">${option}</option>
+                                <option v-for="option in field.options" :key="option" :value="option">${option}</option>
                             </select>
                             <input v-else
                                    :type="field.type"
@@ -452,7 +444,20 @@
                 }
                 this.currentStep.fields.forEach(field => {
                     if (!this.stepInputs.hasOwnProperty(field.name)) {
-                        if (field.type === 'matrix' || field.type === 'list_of_objects' || field.type === 'list') {
+                        if (field.type === 'matrix') {
+                            const matrix = {};
+                            field.row_options.forEach(row => {
+                                matrix[row] = {};
+                                field.column_options.forEach(column => {
+                                    matrix[row][column] = field.cell_format.min;
+                                });
+                            });
+                            this.$set(this.stepInputs, field.name, matrix);
+                        } else if (field.type === 'list_of_objects') {
+                            this.$set(this.stepInputs, field.name, []);
+                        } else if (field.type === 'list') {
+                            this.$set(this.stepInputs, field.name, []);
+                        } else if (field.type === 'select') {
                             this.$set(this.stepInputs, field.name, []);
                         } else {
                             this.$set(this.stepInputs, field.name, '');
@@ -463,47 +468,28 @@
             },
             
             addListItem(field) {
-                if (!Array.isArray(this.stepInputs[field.name])) {
-                    this.$set(this.stepInputs, field.name, []);
-                }
-                const newItem = {};
-                Object.keys(field.object_structure).forEach(key => {
-                    if (typeof field.object_structure[key] === 'object' && field.object_structure[key].type === 'number') {
-                        newItem[key] = field.object_structure[key].min;
-                    } else if (field.dependencies && field.dependencies[key]) {
-                        const unusedValues = this.getUnusedDependentValues(field, key);
-                        newItem[key] = unusedValues.length > 0 ? unusedValues[0] : '';
-                    } else {
+                if (field.type === 'list_of_objects') {
+                    const newItem = {};
+                    Object.keys(field.object_structure).forEach(key => {
                         newItem[key] = '';
+                    });
+                    if (!this.stepInputs[field.name]) {
+                        this.$set(this.stepInputs, field.name, []);
                     }
-                });
-                this.stepInputs[field.name].push(newItem);
-                this.validateTotalWeight(field);
+                    this.stepInputs[field.name].push(newItem);
+                    this.validateTotalWeight(field);
+                } else if (field.type === 'list') {
+                    if (!this.stepInputs[field.name]) {
+                        this.$set(this.stepInputs, field.name, []);
+                    }
+                    this.stepInputs[field.name].push('');
+                }
             },
-            
+
             removeListItem(fieldName, index) {
                 this.stepInputs[fieldName].splice(index, 1);
             },
-
-            addMatrixRow(field) {
-                const unusedValues = this.getUnusedDependentValues(field, 'rows');
-                if (unusedValues.length > 0) {
-                    if (!this.stepInputs[field.name]) {
-                        this.$set(this.stepInputs, field.name, {});
-                    }
-                    const newRow = {};
-                    this.getDependentValues(field, 'columns').forEach(column => {
-                        newRow[column] = field.cell_format.min;
-                    });
-                    this.$set(this.stepInputs[field.name], unusedValues[0], newRow);
-                }
-            },
-            
-            removeMatrixRow(fieldName, rowName) {
-                if (this.stepInputs[fieldName] && this.stepInputs[fieldName][rowName]) {
-                    this.$delete(this.stepInputs[fieldName], rowName);
-                }
-            },
+        
             getDependentValues(field, dependencyType) {
                 if (!field.dependencies || !field.dependencies[dependencyType]) return [];
 

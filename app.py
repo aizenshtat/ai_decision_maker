@@ -133,7 +133,20 @@ def get_step():
                     dep = field['dependencies']['columns']
                     columns_data = decision.data.get(dep['step'], {}).get(dep['field'], [])
                     field['column_options'] = [item[dep['use']] for item in columns_data]
-    
+        
+        elif field['type'] == 'list_of_objects':
+            if 'dependencies' in field:
+                field['dependent_options'] = {}
+                for attr, dep in field['dependencies'].items():
+                    dep_data = decision.data.get(dep['step'], {}).get(dep['field'], [])
+                    field['dependent_options'][attr] = [item[dep['use']] for item in dep_data]
+        
+        elif field['type'] == 'select':
+            if 'dependencies' in field:
+                dep = field['dependencies']
+                dep_data = decision.data.get(dep['step'], {}).get(dep['field'], [])
+                field['options'] = [item[dep['use']] for item in dep_data]
+                
     saved_data = decision.data.get(step['title'], {})
     ai_suggestion = decision.data.get(f"{step['title']}_ai_suggestion", "")
     
