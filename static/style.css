@@ -678,8 +678,8 @@ input[type="range"]::-moz-range-thumb {
     }
     
     table {
-        border-collapse: collapse;
         width: 100%;
+        border-collapse: collapse;
         margin-bottom: 1rem;
     }
     
@@ -694,7 +694,11 @@ input[type="range"]::-moz-range-thumb {
     }
     
     input[type="number"] {
-        width: 50px;
+        width: 60px;
+    }
+    
+    select, button {
+        width: 100%;
     }
 
 }

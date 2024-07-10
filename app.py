@@ -114,22 +114,43 @@ def start_decision():
 def get_step():
     decision_id = request.args.get('decision_id')
     step_index = int(request.args.get('step'))
-    app.logger.info(f"Fetching step {step_index} for decision {decision_id}")
     decision = Decision.query.get(decision_id)
     if decision.user_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
     
-    if step_index >= len(PERSONAL_DECISION_FRAMEWORK['steps']):
-        return jsonify({'error': 'Step index out of range'}), 400
-    
     step = PERSONAL_DECISION_FRAMEWORK['steps'][step_index]
-    step_title = step['title']
+
+    if step['title'] == 'Evaluate Options':
+        options = decision.data.get('Identify Options', {}).get('options', [])
+        for field in step['fields']:
+            if field['name'] == 'evaluations':
+                field['row_options'] = [option['name'] for option in options]
     
-    # Retrieve saved data for this step
-    saved_data = decision.data.get(step_title, {})
+    for field in step['fields']:
+        if field['type'] == 'matrix':
+            matrix_structure = field['matrix_structure']
+            rows_data = decision.data.get(matrix_structure['rows']['step'], {}).get(matrix_structure['rows']['field'], [])
+            columns_data = decision.data.get(matrix_structure['columns']['step'], {}).get(matrix_structure['columns']['field'], [])
+            
+            field['row_options'] = [option['name'] for option in rows_data]
+            field['column_options'] = [item[matrix_structure['columns'].get('use', 'name')] for item in columns_data]
+        
+        elif field['type'] == 'list_of_objects':
+            if 'dependencies' in field:
+                for dep_key, dep_value in field['dependencies'].items():
+                    dep_data = decision.data.get(dep_value['step'], {}).get(dep_value['field'], [])
+                    field['dependent_options'] = [option['name'] for option in dep_data]
+        
+        elif field['type'] == 'select':
+            if 'dependencies' in field:
+                dep_value = field['dependencies']['options']
+                dep_data = decision.data.get(dep_value['step'], {}).get(dep_value['field'], [])
+                field['options'] = [option['name'] for option in dep_data]
+        
+        # Add handling for any other field types with dependencies here
     
-    # Retrieve saved AI suggestion for this step
-    ai_suggestion = decision.data.get(f"{step_title}_ai_suggestion", "")
+    saved_data = decision.data.get(step['title'], {})
+    ai_suggestion = decision.data.get(f"{step['title']}_ai_suggestion", "")
     
     return jsonify({
         'step': step,

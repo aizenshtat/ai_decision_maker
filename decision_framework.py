@@ -88,7 +88,18 @@ PERSONAL_DECISION_FRAMEWORK = {
                     "object_structure": {
                         "name": "text",
                         "description": "textarea",
-                        "weight": "number"
+                        "weight": {
+                            "type": "number",
+                            "min": 0,
+                            "max": 100,
+                            "step": 1
+                        }
+                    },
+                    "validation": {
+                        "total_weight": {
+                            "max": 100,
+                            "message": "The sum of all weights must not exceed 100."
+                        }
                     },
                     "placeholder": "e.g., Criterion: Potential income, Description: Expected salary and benefits, Weight: 8"
                 }
@@ -104,9 +115,25 @@ PERSONAL_DECISION_FRAMEWORK = {
                     "type": "matrix",
                     "label": "Option Evaluations",
                     "description": "Rate each option against each criterion",
-                    "rows": "options",
-                    "columns": "criteria",
-                    "cell_type": "number"
+                    "matrix_structure": {
+                        "rows": {
+                            "source": "options",
+                            "step": "Identify Options",
+                            "field": "options"
+                        },
+                        "columns": {
+                            "source": "criteria",
+                            "step": "Establish Criteria",
+                            "field": "criteria",
+                            "use": "name"
+                        }
+                    },
+                    "cell_format": {
+                        "type": "number",
+                        "min": 1,
+                        "max": 5,
+                        "step": 1
+                    }
                 },
                 {
                     "name": "option_notes",
@@ -117,6 +144,9 @@ PERSONAL_DECISION_FRAMEWORK = {
                         "option": "text",
                         "strengths": "textarea",
                         "weaknesses": "textarea"
+                    },
+                    "dependencies": {
+                        "option": {"step": "Identify Options", "field": "options"}
                     }
                 }
             ],
@@ -136,6 +166,9 @@ PERSONAL_DECISION_FRAMEWORK = {
                         "short_term": "textarea",
                         "long_term": "textarea",
                         "risks": "textarea"
+                    },
+                    "dependencies": {
+                        "option": {"step": "Identify Options", "field": "options"}
                     }
                 },
                 {
@@ -157,9 +190,12 @@ PERSONAL_DECISION_FRAMEWORK = {
             "fields": [
                 {
                     "name": "chosen_option",
-                    "type": "text",
+                    "type": "select",
                     "label": "Chosen Option",
-                    "description": "The option you've decided to pursue"
+                    "description": "The option you've decided to pursue",
+                    "dependencies": {
+                        "options": {"step": "Identify Options", "field": "options"}
+                    }
                 },
                 {
                     "name": "decision_rationale",

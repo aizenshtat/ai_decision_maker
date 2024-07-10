@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
+    {% raw %}
     <div id="app" class="container">
         <h1>AI Decision Maker</h1>
         <div v-if="!isLoggedIn">
@@ -33,29 +34,67 @@
                 <form @submit.prevent="submitStep">
                     <div v-for="field in currentStep.fields" :key="field.name" class="field-container">
                         <label :for="field.name">${field.label}</label>
-                        <div v-if="field.type === 'text'">
-                            <input :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" type="text" :disabled="isAIProcessing">
-                        </div>
-                        <div v-else-if="field.type === 'textarea'">
-                            <textarea :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" :disabled="isAIProcessing"></textarea>
-                        </div>
-                        <div v-else-if="field.type === 'list'">
+                        <input v-if="field.type === 'text'" :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" type="text" :disabled="isAIProcessing">
+                        <textarea v-if="field.type === 'textarea'" :id="field.name" v-model="stepInputs[field.name]" :placeholder="field.placeholder" :disabled="isAIProcessing"></textarea>
+                        <input v-if="field.type === 'number'" :id="field.name" v-model.number="stepInputs[field.name]" type="number" :min="field.min" :max="field.max" :step="field.step" :disabled="isAIProcessing">
+                        <div v-if="field.type === 'list'">
                             <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-field-item">
                                 <input v-model="stepInputs[field.name][index]" type="text" :disabled="isAIProcessing">
                                 <button @click.prevent="removeListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
                             </div>
                             <button @click.prevent="addListItem(field.name)" type="button" :disabled="isAIProcessing">Add Item</button>
                         </div>
-                        <div v-else-if="field.type === 'list_of_objects'">
-                            <div v-for="(item, index) in stepInputs[field.name]" :key="index">
-                                <div v-for="(value, key) in item" :key="key" :disabled="isAIProcessing">
-                                    <label>${key}</label>
-                                    <input v-model="item[key]">
+                        <div v-if="field.type === 'list_of_objects'">
+                            <div v-for="(item, index) in stepInputs[field.name] || []" :key="index">
+                                <div v-for="(value, key) in field.object_structure" :key="key">
+                                    <input v-if="value === 'text'" v-model="item[key]" :placeholder="key">
+                                    <textarea v-else-if="value === 'textarea'" v-model="item[key]" :placeholder="key"></textarea>
+                                    <input v-else-if="typeof value === 'object' && value.type === 'number'" v-model.number="item[key]" type="number" :min="value.min" :max="value.max" :step="value.step" :placeholder="key">
                                 </div>
-                                <button @click="removeObjectListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
+                                <button @click.prevent="removeListItem(field.name, index)">Remove</button>
                             </div>
-                            <button @click.prevent="addObjectListItem(field.name, field.object_structure)" type="button" :disabled="isAIProcessing">Add Item</button>
+                            <button @click.prevent="addListItem(field)">Add Item</button>
                         </div>
+                        <div v-if="field.type === 'select'">
+                            <select v-model="stepInputs[field.name]">
+                                <option v-for="option in field.options" :key="option" :value="option">${option}</option>
+                            </select>
+                        </div>
+                        <div v-else-if="field.type === 'matrix'">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>${field.matrix_structure.rows.source}</th>
+                                        <th v-for="column in field.column_options" :key="column">${column}</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(row, rowName) in stepInputs[field.name]" :key="rowName">
+                                        <td>
+                                            <select v-model="row.name">
+                                                <option v-for="option in availableOptions(field)" :key="option" :value="option">${option}</option>
+                                            </select>
+                                        </td>
+                                        <td v-for="column in field.column_options" :key="column">
+                                            <input 
+                                                :type="field.cell_format.type"
+                                                v-model.number="row[column]"
+                                                :min="field.cell_format.min"
+                                                :max="field.cell_format.max"
+                                                :step="field.cell_format.step"
+                                            >
+                                        </td>
+                                        <td>
+                                            <button @click.prevent="removeMatrixRow(field.name, rowName)">Remove</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <button @click.prevent="addMatrixRow(field)" :disabled="!availableOptions(field).length">Add Row</button>
+                        </div>
+                        
+                        <p v-if="getFieldError(field)" class="error">${getFieldError(field)}</p>
                     </div>
 
                     <div class="navigation-buttons">
@@ -144,7 +183,7 @@
             </div>
         </div>
     </div>
-    
+    {% endraw %}
     <script>
     new Vue({
         el: '#app',
@@ -168,18 +207,12 @@
             selectedDecision: null,
             stepInputs: {},
             decisionId: null,
-            isAIProcessing: false
+            isAIProcessing: false,
+            fieldErrors: {}
         },
         computed: {
-            isStepValid() {
-                if (!this.currentStep || !this.currentStep.fields) return false;
-                return this.currentStep.fields.every(field => {
-                    const value = this.stepInputs[field.name];
-                    if (field.type === 'list' || field.type === 'list_of_objects') {
-                        return Array.isArray(value) && value.length > 0;
-                    }
-                    return value !== undefined && value !== '';
-                });
+            getFieldError() {
+                return (field) => this.fieldErrors[field.name] || null;
             },
             progress() {
                 if (!this.totalSteps) return 0;
@@ -187,6 +220,26 @@
             }
         },
         methods: {
+            validateField(field) {
+                if (field.validation) {
+                    if (field.validation.total_weight) {
+                        const totalWeight = this.stepInputs[field.name].reduce((sum, item) => sum + (Number(item.weight) || 0), 0);
+                        if (totalWeight > field.validation.total_weight.max) {
+                            this.$set(this.fieldErrors, field.name, field.validation.total_weight.message);
+                            return false;
+                        }
+                    }
+                    // Add more validation types here as needed
+                }
+                this.$delete(this.fieldErrors, field.name);
+                return true;
+            },
+            isStepValid() {
+                if (!this.currentStep || !this.currentStep.fields) return false;
+                return this.currentStep.fields.every(field => {
+                    return this.validateField(field);
+                });
+            },
             parseMarkdown(content) {
                 return marked.parse(content);
             },
@@ -237,6 +290,22 @@
                     }
                 }
             },
+            updateMatrixInputs(matrixData) {
+                console.log('Updating matrix inputs with:', matrixData);
+                const evaluationsField = this.currentStep.fields.find(f => f.name === 'evaluations');
+                if (evaluationsField && evaluationsField.type === 'matrix') {
+                    console.log('Found evaluations field:', evaluationsField);
+                    if (!this.stepInputs.evaluations) {
+                        this.$set(this.stepInputs, 'evaluations', {});
+                    }
+                    Object.keys(matrixData).forEach(option => {
+                        this.$set(this.stepInputs.evaluations, option, matrixData[option]);
+                    });
+                    console.log('Final updated matrix data:', this.stepInputs.evaluations);
+                } else {
+                    console.error('Evaluations field not found or not a matrix type');
+                }
+            },
             getNextStep() {
                 this.currentStepIndex++;
                 console.log('Getting next step...', this.currentStepIndex);
@@ -270,6 +339,10 @@
                 });
             },
             submitStep() {
+                if (!this.isStepValid()) {
+                    alert('Please correct the errors before proceeding.');
+                    return;
+                }
                 console.log('Submitting step:', this.stepInputs);
                 this.isLoading = true;
                 axios.post('/api/submit_step', {
@@ -303,11 +376,11 @@
                 }
                 this.currentStep.fields.forEach(field => {
                     if (!this.stepInputs.hasOwnProperty(field.name)) {
-                    if (field.type === 'list' || field.type === 'list_of_objects') {
-                        this.$set(this.stepInputs, field.name, []);
-                    } else {
-                        this.$set(this.stepInputs, field.name, '');
-                    }
+                        if (field.type === 'matrix' || field.type === 'list_of_objects' || field.type === 'list') {
+                            this.$set(this.stepInputs, field.name, []);
+                        } else {
+                            this.$set(this.stepInputs, field.name, '');
+                        }
                     }
                 });
                 console.log('Initialized step inputs:', this.stepInputs);
@@ -321,15 +394,49 @@
             removeListItem(fieldName, index) {
                 this.stepInputs[fieldName].splice(index, 1);
             },
-            addObjectListItem(fieldName, structure) {
+            addObjectListItem(fieldName, objectStructure) {
+                if (!this.stepInputs[fieldName]) {
+                    this.$set(this.stepInputs, fieldName, []);
+                }
                 const newItem = {};
-                Object.keys(structure).forEach(key => {
+                Object.keys(objectStructure).forEach(key => {
                     newItem[key] = '';
                 });
                 this.stepInputs[fieldName].push(newItem);
             },
             removeObjectListItem(fieldName, index) {
-                this.stepInputs[fieldName].splice(index, 1);
+                if (this.stepInputs[fieldName] && this.stepInputs[fieldName].length > index) {
+                    this.stepInputs[fieldName].splice(index, 1);
+                }
+            },
+            addMatrixRow(field) {
+                const availableOption = this.availableOptions(field)[0];
+                if (availableOption) {
+                    if (!this.stepInputs[field.name]) {
+                        this.$set(this.stepInputs, field.name, {});
+                    }
+                    const newRow = {};
+                    field.column_options.forEach(column => {
+                        newRow[column] = field.cell_format.min;
+                    });
+                    this.$set(this.stepInputs[field.name], availableOption, newRow);
+                }
+            },
+                
+            removeMatrixRow(fieldName, optionName) {
+                if (this.stepInputs[fieldName] && this.stepInputs[fieldName][optionName]) {
+                    this.$delete(this.stepInputs[fieldName], optionName);
+                }
+            },
+            availableOptions(field) {
+                if (field.type === 'matrix') {
+                    const allOptions = field.matrix_structure?.rows?.source === 'options' 
+                        ? this.stepInputs.options || []
+                        : field.row_options || [];
+                    const usedOptions = Object.keys(this.stepInputs[field.name] || {});
+                    return allOptions.filter(option => !usedOptions.includes(option));
+                }
+                return [];
             },
             previousStep() {
                 if (this.currentStepIndex > 1) {
