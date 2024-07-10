@@ -18,7 +18,7 @@
             <p>Please <a href="/login">login</a> or <a href="/register">register</a> to use the AI Decision Maker.</p>
         </div>
         <div v-else>
-            <div v-if="!decisionStarted">
+            <div v-if="!decisionStarted" class="card">
                 <h2>Start a New Decision</h2>
                 <label for="decision-question">What decision do you need help with?</label>
                 <textarea id="decision-question" v-model="decisionQuestion" required></textarea>
@@ -28,14 +28,14 @@
                 </button>
             </div>
     
-            <div v-else-if="!decisionCompleted">
+            <div v-else-if="!decisionCompleted" class="card">
                 <h2>${currentStep.title}</h2>
                 <p>${currentStep.description}</p>
                 <form @submit.prevent="submitStep">
                     <div v-for="field in currentStep.fields" :key="field.name" class="field-container">
-                        <label :for="field.name">${field.label}</label>
-                        <div v-if="field.type === 'matrix'">
-                            <table>
+                        <h3>${field.label}</h3>
+                        <div v-if="field.type === 'matrix'" >
+                            <table class="matrix-table">
                                 <thead>
                                     <tr>
                                         <th>${field.matrix_structure.rows}</th>
@@ -62,46 +62,50 @@
                         
                         <div v-else-if="field.type === 'list_of_objects'">
                             <div v-for="(item, index) in stepInputs[field.name]" :key="index">
-                                <div v-for="(value, key) in field.object_structure" :key="key">
-                                    <label>${key}</label>
-                                    <select v-if="field.dependent_options && field.dependent_options[key]" 
+                                <div class="card">
+                                    <div v-for="(value, key) in field.object_structure" :key="key">
+                                        <label>${key}</label>
+                                        <select v-if="field.dependent_options && field.dependent_options[key]" 
+                                                v-model="item[key]"
+                                                :placeholder="field.placeholder"
+                                                :disabled="isAIProcessing">
+                                            <option v-for="option in field.dependent_options[key]" :key="option" :value="option">${option}</option>
+                                        </select>
+                                        <textarea v-else-if="value === 'textarea'"
+                                                v-model="item[key]"
+                                                :placeholder="field.placeholder"
+                                                :disabled="isAIProcessing"></textarea>
+                                        <input v-else-if="typeof value === 'object' && value.type === 'number'"
+                                                type="number"
+                                                v-model.number="item[key]"
+                                                :min="value.min"
+                                                :max="value.max"
+                                                :step="value.step"
+                                                :placeholder="field.placeholder"
+                                                :disabled="isAIProcessing"
+                                                @input="validateField(field, item, key, index)">
+                                        <input v-else
+                                            :type="typeof value === 'object' ? value.type : value"
                                             v-model="item[key]"
                                             :placeholder="field.placeholder"
                                             :disabled="isAIProcessing">
-                                        <option v-for="option in field.dependent_options[key]" :key="option" :value="option">${option}</option>
-                                    </select>
-                                    <textarea v-else-if="value === 'textarea'"
-                                            v-model="item[key]"
-                                            :placeholder="field.placeholder"
-                                            :disabled="isAIProcessing"></textarea>
-                                    <input v-else-if="typeof value === 'object' && value.type === 'number'"
-                                            type="number"
-                                            v-model.number="item[key]"
-                                            :min="value.min"
-                                            :max="value.max"
-                                            :step="value.step"
-                                            :placeholder="field.placeholder"
-                                            :disabled="isAIProcessing"
-                                            @input="validateField(field, item, key, index)">
-                                    <input v-else
-                                           :type="typeof value === 'object' ? value.type : value"
-                                           v-model="item[key]"
-                                           :placeholder="field.placeholder"
-                                           :disabled="isAIProcessing">
-                                    <span v-if="getFieldError(field, index, key)" class="error-message">${getFieldError(field, index, key)}</span>
+                                        <span v-if="getFieldError(field, index, key)" class="error-message">${getFieldError(field, index, key)}</span>
+                                    </div>
+                                    <button @click.prevent="removeListItem(field.name, index)" :disabled="isAIProcessing">Remove</button>
                                 </div>
-                                <button @click.prevent="removeListItem(field.name, index)" :disabled="isAIProcessing">Remove</button>
                             </div>
                             <button @click.prevent="addListItem(field)" :disabled="isAIProcessing">Add Item</button>
                             <span v-if="getTotalWeightError(field)" class="error-message">${getTotalWeightError(field)}</span>
                         </div>
                         <div v-else-if="field.type === 'list'">
                             <div v-for="(item, index) in stepInputs[field.name]" :key="index" class="list-item">
-                                <input v-model="stepInputs[field.name][index]" 
-                                        type="text" 
-                                        :disabled="isAIProcessing" 
-                                        :placeholder="field.placeholder">
-                                <button @click.prevent="removeListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
+                                <div class="card">
+                                    <input v-model="stepInputs[field.name][index]" 
+                                            type="text" 
+                                            :disabled="isAIProcessing" 
+                                            :placeholder="field.placeholder">
+                                    <button @click.prevent="removeListItem(field.name, index)" type="button" :disabled="isAIProcessing">Remove</button>
+                                </div>
                             </div>
                             <button @click.prevent="addListItem(field)" type="button" :disabled="isAIProcessing">Add Item</button>
                         </div>
@@ -142,9 +146,11 @@
                 <div v-if="isAIProcessing" class="ai-processing">
                     AI is processing your input...
                 </div>
+                <div class="card">
                 <div v-if="aiSuggestion" class="ai-suggestion">
                     <h3>AI Suggestion:</h3>
                     <div v-html="parseMarkdown(aiSuggestion)"></div>
+                </div>
                 </div>
                 <div class="progress-container">
                     <div class="progress-bar" :style="{ width: progress + '%' }"></div>
@@ -152,7 +158,7 @@
                 <p class="progress-text">${Math.round(progress)}% Complete</p>
             </div>
     
-            <div v-if="decisionCompleted">
+            <div v-if="decisionCompleted" class="card">
                 <h2>Decision Summary</h2>
                 <div class="decision-summary" v-html="parseMarkdown(decisionSummary)"></div>
                 
@@ -174,11 +180,13 @@
             <div v-if="error" class="error">
                 ${error}
             </div>
-    
+            <div class="card">
             <div v-if="savedDecisions.length > 0" class="saved-decisions">
                 <h2>Your Decisions</h2>
                 <ul>
+                    
                     <li v-for="decision in savedDecisions" :key="decision.id" class="decision-item">
+                        <div class="card">
                         <h3>${decision.question}</h3>
                         <p><strong>Framework:</strong> ${decision.framework}</p>
                         <p><strong>Created:</strong> ${new Date(decision.created_at).toLocaleString()}</p>
@@ -189,10 +197,12 @@
                             <button @click="showDecisionDetails(decision)">View Details</button>
                             <button @click="deleteDecision(decision.id)" class="delete-btn">Delete</button>
                         </div>
+                    </div>
                     </li>
+                    
                 </ul>
             </div>
-
+            </div>
             <div v-if="isModalOpen" class="modal">
                 <div class="modal-content">
                     <span class="close" @click="closeDecisionDetails">&times;</span>
