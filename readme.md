@@ -5,20 +5,27 @@ An AI-powered web application to assist in decision-making processes using the A
 ## Features
 
 - Utilizes Anthropic's Claude AI for decision-making assistance
-- Supports multiple decision-making frameworks (Personal, Business, Ethical)
+- Implements a refined Personal Decision Framework
 - Step-by-step guided decision-making process
-- Detailed explanations and examples for each framework
-- AI suggestions for each step of the decision-making process
+- Detailed explanations and AI suggestions for each step
 - User authentication and saved decisions
-- Decision comparison tool
+- Decision comparison and resumption capabilities
 - Feedback system for continuous improvement
 - Responsive design for desktop and mobile use
+
+## Technology Stack
+
+- Backend: Flask (Python)
+- Frontend: Vue.js
+- Database: SQLite with SQLAlchemy ORM
+- AI: Anthropic Claude API
+- Additional libraries: Flask-Login, Flask-Migrate, python-dotenv
 
 ## Installation
 
 1. Clone the repository:
    ```
-   git clone https://github.com/aizenshtat/ai_decision_maker.git
+   git clone https://github.com/yourusername/ai_decision_maker.git
    cd ai-decision-maker
    ```
 
@@ -55,24 +62,55 @@ An AI-powered web application to assist in decision-making processes using the A
 ## Usage
 
 1. Register for an account or log in if you already have one
-2. Enter your decision question in the input field
-3. Select the type of decision (Personal, Business, or Ethical)
-4. Follow the step-by-step guided process, providing your thoughts for each step
-5. Click "Get AI Suggestion" to receive advice for each step of the decision-making process
-6. Review the AI's suggestions and save your decision if desired
-7. Use the comparison tool to compare multiple saved decisions
-8. Provide feedback on the AI's suggestions to help improve the system
+2. Start a new decision by entering your decision question
+3. Follow the step-by-step guided process, providing your thoughts for each step
+4. Receive AI suggestions for each step of the decision-making process
+5. Review and modify your inputs as needed
+6. Complete the decision-making process to receive a final summary
+7. Provide feedback on the AI's suggestions to help improve the system
+8. View, resume, or delete your saved decisions from the dashboard
 
-## Contributing
+## Project Structure
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+- `app.py`: Main Flask application file
+- `config.py`: Configuration settings
+- `decision_framework.py`: Definition of the Personal Decision Framework
+- `prompt_template.py`: AI prompt generation logic
+- `requirements.txt`: List of Python dependencies
+- `static/`: Static files (CSS, images)
+- `templates/`: HTML templates (index.html, login.html, register.html)
+
+## Development
+
+To contribute to the project:
+
+1. Fork the repository
+2. Create a new branch for your feature
+3. Make your changes and commit them
+4. Push to your fork and submit a pull request
+
+Please ensure your code adheres to the project's coding standards and includes appropriate tests.
+
+## Testing
+
+(Note: Add information about running tests once they are implemented)
+
+## Deployment
+
+This application is designed to be deployed on platforms like Heroku or AWS. Make sure to set the necessary environment variables and configure the database appropriately for your chosen deployment platform.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ## Acknowledgements
 
 - [Anthropic](https://www.anthropic.com) for providing the Claude AI API
 - [Flask](https://flask.palletsprojects.com/) web framework
 - [Vue.js](https://vuejs.org/) for frontend interactivity
+- [SQLAlchemy](https://www.sqlalchemy.org/) for database ORM
+- [Flask-Login](https://flask-login.readthedocs.io/) for user session management
+
+## Support
+
+For issues, feature requests, or questions, please open an issue in the GitHub repository.
